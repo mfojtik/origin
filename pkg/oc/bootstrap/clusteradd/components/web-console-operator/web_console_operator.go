@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/golang/glog"
+	"github.com/openshift/origin/pkg/oc/bootstrap/clusteradd/components/web-console"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,6 +38,10 @@ func (c *WebConsoleOperatorComponentOptions) Install(dockerClient dockerhelper.I
 	imageTemplate := variable.NewDefaultImageTemplate()
 	imageTemplate.Format = c.InstallContext.ImageFormat()
 	imageTemplate.Latest = false
+	publicHostname, err := web_console.GetMasterPublicHostPort(c.InstallContext.BaseDir())
+	if err != nil {
+		return err
+	}
 
 	params := map[string]string{
 		"IMAGE":                 imageTemplate.ExpandOrDie("hypershift"),
@@ -45,6 +50,7 @@ func (c *WebConsoleOperatorComponentOptions) Install(dockerClient dockerhelper.I
 		"COMPONENT_LOGLEVEL":    fmt.Sprintf("%d", c.InstallContext.ComponentLogLevel()),
 		"NAMESPACE":             namespace,
 		"OPENSHIFT_PULL_POLICY": c.InstallContext.ImagePullPolicy(),
+		"PUBLIC_HOSTNAME":       publicHostname,
 	}
 
 	glog.V(2).Infof("instantiating webconsole-operator template with parameters %v", params)

@@ -54,7 +54,7 @@ func (c *WebConsoleComponentOptions) Install(dockerClient dockerhelper.Interface
 		return errors.NewError("cannot read clusterInfo in web console config")
 	}
 
-	masterPublicHostPort, err := getMasterPublicHostPort(c.InstallContext.BaseDir())
+	masterPublicHostPort, err := GetMasterPublicHostPort(c.InstallContext.BaseDir())
 	if err != nil {
 		return err
 	}
@@ -64,6 +64,7 @@ func (c *WebConsoleComponentOptions) Install(dockerClient dockerhelper.Interface
 	if err != nil {
 		return err
 	}
+	glog.Infof("Using %s URL for web-console", clusterInfo["consolePublicURL"])
 
 	// serialize it back out as a string to use as a template parameter
 	updatedConfig, err := yaml.Marshal(consoleConfig)
@@ -108,7 +109,7 @@ func (c *WebConsoleComponentOptions) Install(dockerClient dockerhelper.Interface
 		params).Install(dockerClient)
 }
 
-func getMasterPublicHostPort(basedir string) (string, error) {
+func GetMasterPublicHostPort(basedir string) (string, error) {
 	masterPublicURL, err := getMasterPublicURL(basedir)
 	if err != nil {
 		return "", err
@@ -125,11 +126,11 @@ func getMasterPublicURL(basedir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return masterConfig.MasterPublicURL, nil
+	return masterConfig.KubernetesMasterConfig.MasterIP, nil
 }
 
 func getMasterConfig(basedir string) (*configapi.MasterConfig, error) {
-	configBytes, err := ioutil.ReadFile(path.Join(basedir, kubeapiserver.KubeAPIServerDirName, "master-config.yaml"))
+	configBytes, err := ioutil.ReadFile(path.Join(basedir, kubeapiserver.OpenShiftAPIServerDirName, "master-config.yaml"))
 	if err != nil {
 		return nil, err
 	}

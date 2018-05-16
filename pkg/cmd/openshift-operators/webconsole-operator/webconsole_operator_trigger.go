@@ -36,6 +36,8 @@ const (
 type WebConsoleOperator struct {
 	operatorConfigClient webconsoleclientv1alpha1.OpenShiftWebConsoleConfigsGetter
 
+	publicHostname string
+
 	appsv1Client      appsclientv1.AppsV1Interface
 	corev1Client      coreclientv1.CoreV1Interface
 	apiServicesClient apiregistrationclientv1beta1.APIServicesGetter
@@ -50,11 +52,13 @@ func NewWebConsoleOperator(
 	operatorConfigClient webconsoleclientv1alpha1.OpenShiftWebConsoleConfigsGetter,
 	appsv1Client appsclientv1.AppsV1Interface,
 	corev1Client coreclientv1.CoreV1Interface,
+	publicHostname string,
 ) *WebConsoleOperator {
 	c := &WebConsoleOperator{
 		operatorConfigClient: operatorConfigClient,
 		appsv1Client:         appsv1Client,
 		corev1Client:         corev1Client,
+		publicHostname:       publicHostname,
 
 		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "WebConsoleOperator"),
 	}

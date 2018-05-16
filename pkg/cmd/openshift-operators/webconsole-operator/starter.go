@@ -13,6 +13,8 @@ import (
 
 type WebConsoleOperatorStarter struct {
 	ClientConfig *rest.Config
+
+	PublicHostname string
 }
 
 func (o *WebConsoleOperatorStarter) Run(stopCh <-chan struct{}) {
@@ -34,6 +36,7 @@ func (o *WebConsoleOperatorStarter) Run(stopCh <-chan struct{}) {
 		webconsoleClient.WebconsoleV1alpha1(),
 		kubeClient.AppsV1(),
 		kubeClient.CoreV1(),
+		o.PublicHostname,
 	)
 
 	operatorInformers.Start(stopCh)

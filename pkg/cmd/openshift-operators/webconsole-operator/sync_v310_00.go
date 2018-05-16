@@ -94,6 +94,12 @@ func ensureConfigMap_v310_00_to_00(c WebConsoleOperator, options webconsolev1alp
 		return false, err
 	}
 
+	// TODO: Pass the port here as well?
+	if len(c.publicHostname) > 0 {
+		requiredConfig.ClusterInfo.ConsolePublicURL = "https://" + c.publicHostname + ":8443/console"
+		requiredConfig.ClusterInfo.MasterPublicURL = "https://" + c.publicHostname + ":8443"
+	}
+
 	newWebConsoleConfig, err := runtime.Encode(webconsoleCodecs.LegacyCodec(webconsoleconfigv1.SchemeGroupVersion), requiredConfig)
 	if err != nil {
 		return false, err

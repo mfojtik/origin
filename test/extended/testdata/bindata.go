@@ -32474,6 +32474,8 @@ parameters:
   value: openshift/origin-web-console:latest
 - name: NODE_SELECTOR
   value: "{}"
+- name: PUBLIC_HOSTNAME
+  value: ""
 objects:
 
 - apiVersion: apiextensions.k8s.io/v1beta1
@@ -32514,7 +32516,7 @@ objects:
         - name: operator
           image: ${IMAGE}
           imagePullPolicy: ${OPENSHIFT_PULL_POLICY}
-          command: ["hypershift", "experimental", "openshift-webconsole-operator"]
+          command: ["hypershift", "experimental", "openshift-webconsole-operator", "--public-hostname=${PUBLIC_HOSTNAME}"]
           args:
           - "-v=${LOGLEVEL}"
         nodeSelector: "${{NODE_SELECTOR}}"

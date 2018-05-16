@@ -27,6 +27,8 @@ const (
 
 type WebConsoleOperatorCommandOptions struct {
 	Output io.Writer
+
+	PublicHostname string
 }
 
 var longDescription = templates.LongDesc(`
@@ -46,6 +48,10 @@ func NewWebConsoleOperatorCommand(name string, out, errout io.Writer) *cobra.Com
 		},
 	}
 
+	flags := cmd.Flags()
+	// This command only supports reading from config
+	flags.StringVar(&options.PublicHostname, "public-hostname", "", "Public hostname for OpenShift web console.")
+
 	return cmd
 }
 
@@ -64,7 +70,8 @@ func (o *WebConsoleOperatorCommandOptions) RunWebConsoleOperator() error {
 	}
 
 	operator := &WebConsoleOperatorStarter{
-		ClientConfig: clientConfig,
+		ClientConfig:   clientConfig,
+		PublicHostname: o.PublicHostname,
 	}
 
 	eventBroadcaster := record.NewBroadcaster()
