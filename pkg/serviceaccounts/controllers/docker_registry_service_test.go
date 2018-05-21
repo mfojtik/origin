@@ -63,7 +63,20 @@ func controllerSetup(startingObjects []runtime.Object, t *testing.T, stopCh <-ch
 	return kubeclient, fakeWatch, controller, informerFactory
 }
 
-func wrapHandler(indicator chan bool, handler func(string) error, t *testing.T) func(string) error {
+func wrapHandler(indicator chan bool, handler func() error, t *testing.T) func() error {
+	return func() error {
+		defer func() { indicator <- true }()
+
+		err := handler()
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+
+		return err
+	}
+}
+
+func wrapStringHandler(indicator chan bool, handler func(string) error, t *testing.T) func(string) error {
 	return func(key string) error {
 		defer func() { indicator <- true }()
 
@@ -129,7 +142,7 @@ func TestUpdateNewStyleSecret(t *testing.T) {
 
 	kubeclient, fakeWatch, controller, informerFactory := controllerSetup([]runtime.Object{newStyleDockercfgSecret}, t, stopChannel)
 	controller.syncRegistryLocationHandler = wrapHandler(received, controller.syncRegistryLocationChange, t)
-	controller.syncSecretHandler = wrapHandler(updatedSecret, controller.syncSecretUpdate, t)
+	controller.syncSecretHandler = wrapStringHandler(updatedSecret, controller.syncSecretUpdate, t)
 	informerFactory.Start(stopChannel)
 	go controller.Run(5, stopChannel)
 
@@ -218,7 +231,7 @@ func TestUpdateOldStyleSecretWithKey(t *testing.T) {
 
 	kubeclient, fakeWatch, controller, informerFactory := controllerSetup([]runtime.Object{oldStyleDockercfgSecret}, t, stopChannel)
 	controller.syncRegistryLocationHandler = wrapHandler(received, controller.syncRegistryLocationChange, t)
-	controller.syncSecretHandler = wrapHandler(updatedSecret, controller.syncSecretUpdate, t)
+	controller.syncSecretHandler = wrapStringHandler(updatedSecret, controller.syncSecretUpdate, t)
 	informerFactory.Start(stopChannel)
 	go controller.Run(5, stopChannel)
 
@@ -309,7 +322,7 @@ func TestUpdateOldStyleSecretWithoutKey(t *testing.T) {
 		return true, tokenSecret, nil
 	})
 	controller.syncRegistryLocationHandler = wrapHandler(received, controller.syncRegistryLocationChange, t)
-	controller.syncSecretHandler = wrapHandler(updatedSecret, controller.syncSecretUpdate, t)
+	controller.syncSecretHandler = wrapStringHandler(updatedSecret, controller.syncSecretUpdate, t)
 	informerFactory.Start(stopChannel)
 	go controller.Run(5, stopChannel)
 
@@ -400,7 +413,7 @@ func TestClearSecretAndRecreate(t *testing.T) {
 
 	kubeclient, fakeWatch, controller, informerFactory := controllerSetup([]runtime.Object{registryService, oldStyleDockercfgSecret}, t, stopChannel)
 	controller.syncRegistryLocationHandler = wrapHandler(received, controller.syncRegistryLocationChange, t)
-	controller.syncSecretHandler = wrapHandler(updatedSecret, controller.syncSecretUpdate, t)
+	controller.syncSecretHandler = wrapStringHandler(updatedSecret, controller.syncSecretUpdate, t)
 	informerFactory.Start(stopChannel)
 	go controller.Run(5, stopChannel)
 
@@ -408,9 +421,10 @@ func TestClearSecretAndRecreate(t *testing.T) {
 	select {
 	case <-controller.dockerURLsInitialized:
 	case <-time.After(time.Duration(45 * time.Second)):
-		t.Fatalf("failed to become ready")
+		t.Fatalf("failed waiting for dockerURLsInitialized")
 	}
 
+	t.Logf("deleting %s service", registryService.Name)
 	fakeWatch.Delete(registryService)
 
 	t.Log("Waiting for first update")
@@ -419,6 +433,7 @@ func TestClearSecretAndRecreate(t *testing.T) {
 	case <-time.After(time.Duration(45 * time.Second)):
 		t.Fatalf("failed to call into syncRegistryLocationHandler")
 	}
+
 	t.Log("Waiting to update secret")
 	select {
 	case <-updatedSecret:
@@ -449,6 +464,8 @@ func TestClearSecretAndRecreate(t *testing.T) {
 	}
 
 	kubeclient.ClearActions()
+
+	t.Logf("adding %s service", registryService.Name)
 	fakeWatch.Add(registryService)
 
 	t.Log("Waiting for second update")
@@ -457,6 +474,7 @@ func TestClearSecretAndRecreate(t *testing.T) {
 	case <-time.After(time.Duration(45 * time.Second)):
 		t.Fatalf("failed to call into syncRegistryLocationHandler")
 	}
+
 	t.Log("Waiting to update secret")
 	select {
 	case <-updatedSecret:
