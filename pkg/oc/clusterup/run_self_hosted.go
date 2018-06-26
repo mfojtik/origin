@@ -29,7 +29,6 @@ import (
 	"github.com/openshift/origin/pkg/oc/clusterup/coreinstall/kubelet"
 	"github.com/openshift/origin/pkg/oc/clusterup/coreinstall/staticpods"
 	"github.com/openshift/origin/pkg/oc/clusterup/docker/dockerhelper"
-	"github.com/openshift/origin/pkg/oc/clusterup/docker/host"
 	"github.com/openshift/origin/pkg/oc/clusterup/manifests"
 
 	// install our apis into the legacy scheme
@@ -156,7 +155,7 @@ func (c *ClusterUpConfig) StartSelfHosted(out io.Writer) error {
 		"LOGLEVEL":                                      fmt.Sprintf("%d", c.ServerLogLevel),
 	}
 
-	clientConfigBuilder, err := kclientcmd.LoadFromFile(filepath.Join(c.LocalDirFor(kubeapiserver.KubeAPIServerDirName), "admin.kubeconfig"))
+	clientConfigBuilder, err := kclientcmd.LoadFromFile(filepath.Join(c.BaseDir, kubeapiserver.KubeAPIServerDirName, "admin.kubeconfig"))
 	if err != nil {
 		return err
 	}
@@ -250,17 +249,6 @@ type configDirs struct {
 	err                          error
 }
 
-// LocalDirFor returns a local directory path for the given component.
-func (c *ClusterUpConfig) LocalDirFor(componentName string) string {
-	return filepath.Join(c.BaseDir, componentName)
-}
-
-// RemoteDirFor returns a directory path on remote host
-// DEPRECATED:
-func (c *ClusterUpConfig) RemoteDirFor(componentName string) string {
-	return filepath.Join(host.RemoteHostOriginDir, c.BaseDir, componentName)
-}
-
 func (c *ClusterUpConfig) BuildConfig() (*configDirs, error) {
 	configs := &configDirs{
 		masterConfigDir:              filepath.Join(c.BaseDir, kubeapiserver.KubeAPIServerDirName),
@@ -282,14 +270,14 @@ func (c *ClusterUpConfig) BuildConfig() (*configDirs, error) {
 	}
 
 	if _, err := os.Stat(configs.openshiftAPIServerConfigDir); os.IsNotExist(err) {
-		_, err = c.makeOpenShiftAPIServerConfig(originalMasterConfigDir)
+		_, err = kubeapiserver.MakeOpenShiftAPIServerConfig(originalMasterConfigDir, c.RoutingSuffix, c.BaseDir)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if _, err := os.Stat(configs.openshiftControllerConfigDir); os.IsNotExist(err) {
-		_, err = c.makeOpenShiftControllerConfig(originalMasterConfigDir)
+		_, err = kubeapiserver.MakeOpenShiftControllerConfig(originalMasterConfigDir, c.BaseDir)
 		if err != nil {
 			return nil, err
 		}
@@ -303,7 +291,7 @@ func (c *ClusterUpConfig) BuildConfig() (*configDirs, error) {
 	}
 
 	if _, err := os.Stat(configs.kubeDNSConfigDir); os.IsNotExist(err) {
-		_, err = c.makeKubeDNSConfig(originalNodeConfigDir)
+		_, err = kubelet.MakeKubeDNSConfig(originalNodeConfigDir, c.BaseDir)
 		if err != nil {
 			return nil, err
 		}
@@ -431,14 +419,6 @@ func (c *ClusterUpConfig) makeKubeletFlags(out io.Writer, nodeConfigDir string) 
 
 func (c *ClusterUpConfig) makeKubeDNSConfig(nodeConfig string) (string, error) {
 	return kubelet.MakeKubeDNSConfig(nodeConfig, c.BaseDir)
-}
-
-func (c *ClusterUpConfig) makeOpenShiftAPIServerConfig(masterConfigDir string) (string, error) {
-	return kubeapiserver.MakeOpenShiftAPIServerConfig(masterConfigDir, c.RoutingSuffix, c.BaseDir)
-}
-
-func (c *ClusterUpConfig) makeOpenShiftControllerConfig(masterConfigDir string) (string, error) {
-	return kubeapiserver.MakeOpenShiftControllerConfig(masterConfigDir, c.BaseDir)
 }
 
 // startKubelet returns the container id

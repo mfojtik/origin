@@ -332,7 +332,7 @@ func (c *ClusterUpConfig) Complete(cmd *cobra.Command) error {
 		}
 	} else {
 		// Snowflake for OSX Docker for Mac
-		c.HostVolumesDir = c.RemoteDirFor("openshift.local.volumes")
+		c.HostVolumesDir = filepath.Join(host.RemoteHostOriginDir, c.BaseDir, "openshift.local.volumes")
 	}
 
 	c.HostPersistentVolumesDir = path.Join(c.BaseDir, "openshift.local.pv")
