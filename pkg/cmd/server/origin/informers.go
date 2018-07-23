@@ -13,12 +13,14 @@ import (
 	kinternalinformers "k8s.io/kubernetes/pkg/client/informers/informers_generated/internalversion"
 
 	"github.com/golang/glog"
+	appsclient "github.com/openshift/client-go/apps/clientset/versioned"
+	appsinformer "github.com/openshift/client-go/apps/informers/externalversions"
 	routeclient "github.com/openshift/client-go/route/clientset/versioned"
 	routeinformer "github.com/openshift/client-go/route/informers/externalversions"
 	userclient "github.com/openshift/client-go/user/clientset/versioned"
 	userinformer "github.com/openshift/client-go/user/informers/externalversions"
-	appinformer "github.com/openshift/origin/pkg/apps/generated/informers/internalversion"
-	appclient "github.com/openshift/origin/pkg/apps/generated/internalclientset"
+	appinternalinformer "github.com/openshift/origin/pkg/apps/generated/informers/internalversion"
+	appsinternalclient "github.com/openshift/origin/pkg/apps/generated/internalclientset"
 	appslisters "github.com/openshift/origin/pkg/apps/generated/listers/apps/internalversion"
 	authorizationinformer "github.com/openshift/origin/pkg/authorization/generated/informers/internalversion"
 	authorizationclient "github.com/openshift/origin/pkg/authorization/generated/internalclientset"
@@ -121,9 +123,14 @@ func (i genericInformers) Start(stopCh <-chan struct{}) {
 // is intentionally private.  We don't want to leak it out further than this package.
 // Everything else should say what it wants.
 type informerHolder struct {
-	internalKubeInformers  kinternalinformers.SharedInformerFactory
-	externalKubeInformers  kexternalinformers.SharedInformerFactory
-	appInformers           appinformer.SharedInformerFactory
+	internalKubeInformers kinternalinformers.SharedInformerFactory
+	externalKubeInformers kexternalinformers.SharedInformerFactory
+
+	// External OpenShift informers
+	appsInformer appsinformer.SharedInformerFactory
+
+	// Internal OpenShift informers
+	appsInternalInformers  appinternalinformer.SharedInformerFactory
 	authorizationInformers authorizationinformer.SharedInformerFactory
 	buildInformers         buildinformer.SharedInformerFactory
 	imageInformers         imageinformer.SharedInformerFactory
@@ -137,7 +144,7 @@ type informerHolder struct {
 }
 
 // NewInformers is only exposed for the build's integration testing until it can be fixed more appropriately.
-func NewInformers(clientConfig *rest.Config) (*informerHolder, error) {
+func NewInformers(clientConfig *rest.Config) (InformerAccess, error) {
 	kubeInternal, err := kclientsetinternal.NewForConfig(clientConfig)
 	if err != nil {
 		return nil, err
@@ -147,7 +154,12 @@ func NewInformers(clientConfig *rest.Config) (*informerHolder, error) {
 		return nil, err
 	}
 
-	appClient, err := appclient.NewForConfig(clientConfig)
+	appsClient, err := appsclient.NewForConfig(clientConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	appsInternalClient, err := appsinternalclient.NewForConfig(clientConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -196,14 +208,17 @@ func NewInformers(clientConfig *rest.Config) (*informerHolder, error) {
 	// before then we should try to eliminate our direct to storage access.  It's making us do weird things.
 	const defaultInformerResyncPeriod = 10 * time.Minute
 
-	appInformers := appinformer.NewSharedInformerFactory(appClient, defaultInformerResyncPeriod)
-	appInformers.Apps().InternalVersion().DeploymentConfigs().Informer().AddIndexers(
+	appsInformerFactory := appsinformer.NewSharedInformerFactory(appsClient, defaultInformerResyncPeriod)
+
+	// TODO: Move this to the user?
+	appsInformerFactory.Apps().V1().DeploymentConfigs().Informer().AddIndexers(
 		map[string]cache.IndexFunc{appslisters.ImageStreamReferenceIndex: appslisters.ImageStreamReferenceIndexFunc})
 
 	return &informerHolder{
 		internalKubeInformers:  kinternalinformers.NewSharedInformerFactory(kubeInternal, defaultInformerResyncPeriod),
 		externalKubeInformers:  kexternalinformers.NewSharedInformerFactory(kubeExternal, defaultInformerResyncPeriod),
-		appInformers:           appInformers,
+		appsInformer:           appsInformerFactory,
+		appsInternalInformers:  appinternalinformer.NewSharedInformerFactory(appsInternalClient, defaultInformerResyncPeriod),
 		authorizationInformers: authorizationinformer.NewSharedInformerFactory(authorizationClient, defaultInformerResyncPeriod),
 		buildInformers:         buildinformer.NewSharedInformerFactory(buildClient, defaultInformerResyncPeriod),
 		imageInformers:         imageinformer.NewSharedInformerFactory(imageClient, defaultInformerResyncPeriod),
@@ -231,37 +246,40 @@ func (i *informerHolder) GetInternalKubeInformers() kinternalinformers.SharedInf
 func (i *informerHolder) GetExternalKubeInformers() kexternalinformers.SharedInformerFactory {
 	return i.externalKubeInformers
 }
-func (i *informerHolder) GetAppInformers() appinformer.SharedInformerFactory {
-	return i.appInformers
+func (i *informerHolder) GetInternalOpenshiftAppInformers() appinternalinformer.SharedInformerFactory {
+	return i.appsInternalInformers
 }
-func (i *informerHolder) GetAuthorizationInformers() authorizationinformer.SharedInformerFactory {
+func (i *informerHolder) GetOpenshiftAppInformers() appsinformer.SharedInformerFactory {
+	return i.appsInformer
+}
+func (i *informerHolder) GetInternalOpenshiftAuthorizationInformers() authorizationinformer.SharedInformerFactory {
 	return i.authorizationInformers
 }
-func (i *informerHolder) GetBuildInformers() buildinformer.SharedInformerFactory {
+func (i *informerHolder) GetInternalOpenshiftBuildInformers() buildinformer.SharedInformerFactory {
 	return i.buildInformers
 }
-func (i *informerHolder) GetImageInformers() imageinformer.SharedInformerFactory {
+func (i *informerHolder) GetInternalOpenshiftImageInformers() imageinformer.SharedInformerFactory {
 	return i.imageInformers
 }
-func (i *informerHolder) GetNetworkInformers() networkinformer.SharedInformerFactory {
+func (i *informerHolder) GetInternalOpenshiftNetworkInformers() networkinformer.SharedInformerFactory {
 	return i.networkInformers
 }
-func (i *informerHolder) GetOauthInformers() oauthinformer.SharedInformerFactory {
+func (i *informerHolder) GetInternalOpenshiftOauthInformers() oauthinformer.SharedInformerFactory {
 	return i.oauthInformers
 }
-func (i *informerHolder) GetQuotaInformers() quotainformer.SharedInformerFactory {
+func (i *informerHolder) GetInternalOpenshiftQuotaInformers() quotainformer.SharedInformerFactory {
 	return i.quotaInformers
 }
-func (i *informerHolder) GetRouteInformers() routeinformer.SharedInformerFactory {
+func (i *informerHolder) GetInternalOpenshiftRouteInformers() routeinformer.SharedInformerFactory {
 	return i.routeInformers
 }
-func (i *informerHolder) GetSecurityInformers() securityinformer.SharedInformerFactory {
+func (i *informerHolder) GetInternalOpenshiftSecurityInformers() securityinformer.SharedInformerFactory {
 	return i.securityInformers
 }
-func (i *informerHolder) GetTemplateInformers() templateinformer.SharedInformerFactory {
+func (i *informerHolder) GetInternalOpenshiftTemplateInformers() templateinformer.SharedInformerFactory {
 	return i.templateInformers
 }
-func (i *informerHolder) GetUserInformers() userinformer.SharedInformerFactory {
+func (i *informerHolder) GetInternalOpenshiftUserInformers() userinformer.SharedInformerFactory {
 	return i.userInformers
 }
 
@@ -269,7 +287,7 @@ func (i *informerHolder) GetUserInformers() userinformer.SharedInformerFactory {
 func (i *informerHolder) Start(stopCh <-chan struct{}) {
 	i.internalKubeInformers.Start(stopCh)
 	i.externalKubeInformers.Start(stopCh)
-	i.appInformers.Start(stopCh)
+	i.appsInternalInformers.Start(stopCh)
 	i.authorizationInformers.Start(stopCh)
 	i.buildInformers.Start(stopCh)
 	i.imageInformers.Start(stopCh)
@@ -287,37 +305,37 @@ func (i *informerHolder) ToGenericInformer() GenericResourceInformer {
 		i.Start,
 		i.GetExternalKubeInformers(),
 		genericInternalResourceInformerFunc(func(resource schema.GroupVersionResource) (kexternalinformers.GenericInformer, error) {
-			return i.GetAppInformers().ForResource(resource)
+			return i.GetOpenshiftAppInformers().ForResource(resource)
 		}),
 		genericInternalResourceInformerFunc(func(resource schema.GroupVersionResource) (kexternalinformers.GenericInformer, error) {
-			return i.GetAuthorizationInformers().ForResource(resource)
+			return i.GetInternalOpenshiftAuthorizationInformers().ForResource(resource)
 		}),
 		genericInternalResourceInformerFunc(func(resource schema.GroupVersionResource) (kexternalinformers.GenericInformer, error) {
-			return i.GetBuildInformers().ForResource(resource)
+			return i.GetInternalOpenshiftBuildInformers().ForResource(resource)
 		}),
 		genericInternalResourceInformerFunc(func(resource schema.GroupVersionResource) (kexternalinformers.GenericInformer, error) {
-			return i.GetImageInformers().ForResource(resource)
+			return i.GetInternalOpenshiftImageInformers().ForResource(resource)
 		}),
 		genericResourceInformerFunc(func(resource schema.GroupVersionResource) (kexternalinformers.GenericInformer, error) {
-			return i.GetNetworkInformers().ForResource(resource)
+			return i.GetInternalOpenshiftNetworkInformers().ForResource(resource)
 		}),
 		genericInternalResourceInformerFunc(func(resource schema.GroupVersionResource) (kexternalinformers.GenericInformer, error) {
-			return i.GetOauthInformers().ForResource(resource)
+			return i.GetInternalOpenshiftOauthInformers().ForResource(resource)
 		}),
 		genericInternalResourceInformerFunc(func(resource schema.GroupVersionResource) (kexternalinformers.GenericInformer, error) {
-			return i.GetQuotaInformers().ForResource(resource)
+			return i.GetInternalOpenshiftQuotaInformers().ForResource(resource)
 		}),
 		genericResourceInformerFunc(func(resource schema.GroupVersionResource) (kexternalinformers.GenericInformer, error) {
-			return i.GetRouteInformers().ForResource(resource)
+			return i.GetInternalOpenshiftRouteInformers().ForResource(resource)
 		}),
 		genericInternalResourceInformerFunc(func(resource schema.GroupVersionResource) (kexternalinformers.GenericInformer, error) {
-			return i.GetSecurityInformers().ForResource(resource)
+			return i.GetInternalOpenshiftSecurityInformers().ForResource(resource)
 		}),
 		genericInternalResourceInformerFunc(func(resource schema.GroupVersionResource) (kexternalinformers.GenericInformer, error) {
-			return i.GetTemplateInformers().ForResource(resource)
+			return i.GetInternalOpenshiftTemplateInformers().ForResource(resource)
 		}),
 		genericResourceInformerFunc(func(resource schema.GroupVersionResource) (kexternalinformers.GenericInformer, error) {
-			return i.GetUserInformers().ForResource(resource)
+			return i.GetInternalOpenshiftUserInformers().ForResource(resource)
 		}),
 	)
 }

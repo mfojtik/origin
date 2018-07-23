@@ -45,7 +45,7 @@ func RunDeploymentConfigController(ctx ControllerContext) (bool, error) {
 	}
 
 	go deployconfigcontroller.NewDeploymentConfigController(
-		ctx.AppInformers.Apps().InternalVersion().DeploymentConfigs(),
+		ctx.AppsInformers.Apps().V1().DeploymentConfigs(),
 		ctx.ExternalKubeInformers.Core().V1().ReplicationControllers(),
 		ctx.ClientBuilder.OpenshiftInternalAppsClientOrDie(saName),
 		kubeClient,
