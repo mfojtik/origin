@@ -30,7 +30,7 @@ func RunResourceQuotaManager(ctx ControllerContext) (bool, error) {
 
 	resourceQuotaControllerOptions := &kresourcequota.ResourceQuotaControllerOptions{
 		QuotaClient:               ctx.ClientBuilder.ClientOrDie(saName).Core(),
-		ResourceQuotaInformer:     ctx.ExternalKubeInformers.Core().V1().ResourceQuotas(),
+		ResourceQuotaInformer:     ctx.KubernetesInformers.Core().V1().ResourceQuotas(),
 		ResyncPeriod:              controller.StaticResyncPeriodFunc(resourceQuotaSyncPeriod),
 		Registry:                  resourceQuotaRegistry,
 		ReplenishmentResyncPeriod: replenishmentSyncPeriodFunc,
@@ -54,7 +54,7 @@ func RunClusterQuotaReconciliationController(ctx ControllerContext) (bool, error
 	saName := bootstrappolicy.InfraClusterQuotaReconciliationControllerServiceAccountName
 
 	clusterQuotaMappingController := clusterquotamapping.NewClusterQuotaMappingController(
-		ctx.ExternalKubeInformers.Core().V1().Namespaces(),
+		ctx.KubernetesInformers.Core().V1().Namespaces(),
 		ctx.QuotaInformers.Quota().InternalVersion().ClusterResourceQuotas())
 	resourceQuotaControllerClient := ctx.ClientBuilder.ClientOrDie("resourcequota-controller")
 	discoveryFunc := resourceQuotaControllerClient.Discovery().ServerPreferredNamespacedResources

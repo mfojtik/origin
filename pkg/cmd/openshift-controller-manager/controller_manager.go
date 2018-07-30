@@ -138,7 +138,7 @@ func newControllerContext(
 				Namespace:            bootstrappolicy.DefaultOpenShiftInfraNamespace,
 			},
 		},
-		ExternalKubeInformers:   informers.GetExternalKubeInformers(),
+		KubernetesInformers:     informers.GetExternalKubeInformers(),
 		AppInformers:            informers.GetAppInformers(),
 		AuthorizationInformers:  informers.GetAuthorizationInformers(),
 		BuildInformers:          informers.GetBuildInformers(),

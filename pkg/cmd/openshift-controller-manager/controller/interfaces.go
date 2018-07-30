@@ -6,7 +6,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
-	kexternalinformers "k8s.io/client-go/informers"
+	kubeinformers "k8s.io/client-go/informers"
 	controllerapp "k8s.io/kubernetes/cmd/kube-controller-manager/app"
 	kclientsetinternal "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/controller"
@@ -37,7 +37,7 @@ type ControllerContext struct {
 	// ClientBuilder will provide a client for this controller to use
 	ClientBuilder ControllerClientBuilder
 
-	ExternalKubeInformers   kexternalinformers.SharedInformerFactory
+	KubernetesInformers     kubeinformers.SharedInformerFactory
 	AppInformers            appinformer.SharedInformerFactory
 	BuildInformers          buildinformer.SharedInformerFactory
 	ImageInformers          imageinformer.SharedInformerFactory
@@ -58,7 +58,7 @@ type ControllerContext struct {
 }
 
 type GenericResourceInformer interface {
-	ForResource(resource schema.GroupVersionResource) (kexternalinformers.GenericInformer, error)
+	ForResource(resource schema.GroupVersionResource) (kubeinformers.GenericInformer, error)
 	Start(stopCh <-chan struct{})
 }
 

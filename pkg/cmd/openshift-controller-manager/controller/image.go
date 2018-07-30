@@ -62,29 +62,29 @@ func RunImageTriggerController(ctx ControllerContext) (bool, error) {
 	})
 	sources = append(sources, imagetriggercontroller.TriggerSource{
 		Resource:  schema.GroupResource{Group: "extensions", Resource: "deployments"},
-		Informer:  ctx.ExternalKubeInformers.Extensions().V1beta1().Deployments().Informer(),
-		Store:     ctx.ExternalKubeInformers.Extensions().V1beta1().Deployments().Informer().GetIndexer(),
+		Informer:  ctx.KubernetesInformers.Extensions().V1beta1().Deployments().Informer(),
+		Store:     ctx.KubernetesInformers.Extensions().V1beta1().Deployments().Informer().GetIndexer(),
 		TriggerFn: triggerannotations.NewAnnotationTriggerIndexer,
 		Reactor:   &triggerannotations.AnnotationReactor{Updater: updater},
 	})
 	sources = append(sources, imagetriggercontroller.TriggerSource{
 		Resource:  schema.GroupResource{Group: "extensions", Resource: "daemonsets"},
-		Informer:  ctx.ExternalKubeInformers.Extensions().V1beta1().DaemonSets().Informer(),
-		Store:     ctx.ExternalKubeInformers.Extensions().V1beta1().DaemonSets().Informer().GetIndexer(),
+		Informer:  ctx.KubernetesInformers.Extensions().V1beta1().DaemonSets().Informer(),
+		Store:     ctx.KubernetesInformers.Extensions().V1beta1().DaemonSets().Informer().GetIndexer(),
 		TriggerFn: triggerannotations.NewAnnotationTriggerIndexer,
 		Reactor:   &triggerannotations.AnnotationReactor{Updater: updater},
 	})
 	sources = append(sources, imagetriggercontroller.TriggerSource{
 		Resource:  schema.GroupResource{Group: "apps", Resource: "statefulsets"},
-		Informer:  ctx.ExternalKubeInformers.Apps().V1beta1().StatefulSets().Informer(),
-		Store:     ctx.ExternalKubeInformers.Apps().V1beta1().StatefulSets().Informer().GetIndexer(),
+		Informer:  ctx.KubernetesInformers.Apps().V1beta1().StatefulSets().Informer(),
+		Store:     ctx.KubernetesInformers.Apps().V1beta1().StatefulSets().Informer().GetIndexer(),
 		TriggerFn: triggerannotations.NewAnnotationTriggerIndexer,
 		Reactor:   &triggerannotations.AnnotationReactor{Updater: updater},
 	})
 	sources = append(sources, imagetriggercontroller.TriggerSource{
 		Resource:  schema.GroupResource{Group: "batch", Resource: "cronjobs"},
-		Informer:  ctx.ExternalKubeInformers.Batch().V1beta1().CronJobs().Informer(),
-		Store:     ctx.ExternalKubeInformers.Batch().V1beta1().CronJobs().Informer().GetIndexer(),
+		Informer:  ctx.KubernetesInformers.Batch().V1beta1().CronJobs().Informer(),
+		Store:     ctx.KubernetesInformers.Batch().V1beta1().CronJobs().Informer().GetIndexer(),
 		TriggerFn: triggerannotations.NewAnnotationTriggerIndexer,
 		Reactor:   &triggerannotations.AnnotationReactor{Updater: updater},
 	})
