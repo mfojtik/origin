@@ -26,15 +26,14 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	aggregatorinstall "k8s.io/kube-aggregator/pkg/apis/apiregistration/install"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
-	kclientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/templates"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
 
+	oauthv1client "github.com/openshift/client-go/oauth/clientset/versioned"
 	userv1client "github.com/openshift/client-go/user/clientset/versioned"
 	cmdutil "github.com/openshift/origin/pkg/cmd/util"
 	"github.com/openshift/origin/pkg/cmd/util/variable"
-	oauthclientinternal "github.com/openshift/origin/pkg/oauth/generated/internalclientset"
 	"github.com/openshift/origin/pkg/oc/clusteradd/components/registry"
 	"github.com/openshift/origin/pkg/oc/clusteradd/components/service-catalog"
 	"github.com/openshift/origin/pkg/oc/clusterup/coreinstall/components"
@@ -512,9 +511,6 @@ func (c *ClusterUpConfig) Start() error {
 	if c.WriteConfig {
 		return nil
 	}
-	if err := c.PostClusterStartupMutations(c.Out); err != nil {
-		return err
-	}
 
 	// if we're only supposed to install kube, only install kube.  Maybe later we'll add back components.
 	if c.KubeOnly {
@@ -705,12 +701,12 @@ func (c *ClusterUpConfig) ensureDefaultRedirectURIs(out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	oauthClient, err := oauthclientinternal.NewForConfig(restConfig)
+	oauthClient, err := oauthv1client.NewForConfig(restConfig)
 	if err != nil {
 		return err
 	}
 
-	webConsoleOAuth, err := oauthClient.Oauth().OAuthClients().Get(defaultRedirectClient, metav1.GetOptions{})
+	webConsoleOAuth, err := oauthClient.OauthV1().OAuthClients().Get(defaultRedirectClient, metav1.GetOptions{})
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			fmt.Fprintf(out, "Unable to find OAuthClient %q\n", defaultRedirectClient)
@@ -732,7 +728,7 @@ func (c *ClusterUpConfig) ensureDefaultRedirectURIs(out io.Writer) error {
 
 	webConsoleOAuth.RedirectURIs = append(webConsoleOAuth.RedirectURIs, developmentRedirectURI)
 
-	_, err = oauthClient.Oauth().OAuthClients().Update(webConsoleOAuth)
+	_, err = oauthClient.OauthV1().OAuthClients().Update(webConsoleOAuth)
 	if err != nil {
 		// announce error without interrupting remaining tasks
 		suggestedCmd := fmt.Sprintf("oc patch %s/%s -p '{%q:[%q]}'", "oauthclient", defaultRedirectClient, "redirectURIs", developmentRedirectURI)
@@ -796,24 +792,6 @@ func (c *ClusterUpConfig) updateNoProxy() {
 			c.NoProxy = append(c.NoProxy, v)
 		}
 	}
-}
-
-func (c *ClusterUpConfig) PostClusterStartupMutations(out io.Writer) error {
-	restConfig, err := c.RESTConfig()
-	if err != nil {
-		return err
-	}
-	kClient, err := kclientset.NewForConfig(restConfig)
-	if err != nil {
-		return err
-	}
-
-	// Remove any duplicate nodes
-	if err := c.OpenShiftHelper().CheckNodes(kClient); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (c *ClusterUpConfig) imageFormat() string {

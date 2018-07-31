@@ -9,14 +9,13 @@ import (
 
 	"github.com/golang/glog"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kclientcmd "k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
-	kclientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 
 	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 	_ "github.com/openshift/origin/pkg/cmd/server/apis/config/install"
 	configapilatest "github.com/openshift/origin/pkg/cmd/server/apis/config/latest"
+
 	cmdutil "github.com/openshift/origin/pkg/cmd/util"
 	"github.com/openshift/origin/pkg/oc/clusterup/docker/dockerhelper"
 	"github.com/openshift/origin/pkg/oc/clusterup/docker/errors"
@@ -24,7 +23,6 @@ import (
 )
 
 const (
-	defaultNodeName      = "localhost"
 	DefaultDNSPort       = 8053
 	DefaultSvcCIDR       = "172.30.0.0/16"
 	cmdDetermineNodeHost = "for name in %s; do ls /var/lib/origin/openshift.local.config/node-$name &> /dev/null && echo $name && break; done"
@@ -173,46 +171,6 @@ func (h *Helper) OtherIPs(excludeIP string) ([]string, error) {
 		}
 	}
 	return resultIPs, nil
-}
-
-// CheckNodes determines if there is more than one node that corresponds to the
-// current machine and removes the one that doesn't match the default node name
-func (h *Helper) CheckNodes(kclient kclientset.Interface) error {
-	nodes, err := kclient.Core().Nodes().List(metav1.ListOptions{})
-	if err != nil {
-		return errors.NewError("cannot retrieve nodes").WithCause(err)
-	}
-	if len(nodes.Items) > 1 {
-		glog.V(2).Infof("Found more than one node, will attempt to remove duplicate nodes")
-		nodesToRemove := []string{}
-
-		// First, find default node
-		defaultNodeMachineId := ""
-		for i := 0; i < len(nodes.Items); i++ {
-			if nodes.Items[i].Name == defaultNodeName {
-				defaultNodeMachineId = nodes.Items[i].Status.NodeInfo.MachineID
-				glog.V(5).Infof("machine id for default node is: %s", defaultNodeMachineId)
-				break
-			}
-		}
-
-		for i := 0; i < len(nodes.Items); i++ {
-			if nodes.Items[i].Name != defaultNodeName &&
-				nodes.Items[i].Status.NodeInfo.MachineID == defaultNodeMachineId {
-				glog.V(5).Infof("Found non-default node with duplicate machine id: %s", nodes.Items[i].Name)
-				nodesToRemove = append(nodesToRemove, nodes.Items[i].Name)
-			}
-		}
-
-		for i := 0; i < len(nodesToRemove); i++ {
-			glog.V(2).Infof("Deleting extra node %s", nodesToRemove[i])
-			err = kclient.Core().Nodes().Delete(nodesToRemove[i], nil)
-			if err != nil {
-				return errors.NewError("cannot delete duplicate node %s", nodesToRemove[i]).WithCause(err)
-			}
-		}
-	}
-	return nil
 }
 
 func (h *Helper) OriginLog() string {
