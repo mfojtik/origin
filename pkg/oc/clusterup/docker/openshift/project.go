@@ -1,61 +1,66 @@
 package openshift
 
 import (
+	"fmt"
 	"io"
-	"io/ioutil"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	kclientcmd "k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
 
-	"github.com/openshift/origin/pkg/oc/cli/project"
-	"github.com/openshift/origin/pkg/oc/cli/requestproject"
+	projectv1 "github.com/openshift/api/project/v1"
+	projectclient "github.com/openshift/client-go/project/clientset/versioned"
 	"github.com/openshift/origin/pkg/oc/lib/kubeconfig"
-	projectclientinternal "github.com/openshift/origin/pkg/project/generated/internalclientset"
 )
 
-// createProject creates a project
-func CreateProject(f genericclioptions.RESTClientGetter, name, display, desc, basecmd string, out io.Writer) error {
-	clientConfig, err := f.ToRESTConfig()
+const requestProjectSwitchProjectOutput = `Project %[2]q created on server %[3]q.
+
+To switch to this project and start adding applications, use:
+
+    %[1]s project %[2]s
+`
+
+// CreateProject creates a new project for the user
+func CreateProject(name, display, desc string, out io.Writer) error {
+	userFactory, err := LoggedInUserFactory()
 	if err != nil {
 		return err
 	}
-	projectClient, err := projectclientinternal.NewForConfig(clientConfig)
+	clientConfig, err := userFactory.ToRESTConfig()
 	if err != nil {
 		return err
 	}
-	pathOptions := kubeconfig.NewPathOptionsWithConfig("")
-	opt := &requestproject.RequestProjectOptions{
-		ProjectName: name,
-		DisplayName: display,
-		Description: desc,
-
-		Name: basecmd,
-
-		Client: projectClient.Project(),
-
-		ProjectOptions: &project.ProjectOptions{PathOptions: pathOptions},
-		IOStreams:      genericclioptions.NewTestIOStreamsDiscard(),
-	}
-	err = opt.ProjectOptions.Complete(f, []string{})
+	projectClient, err := projectclient.NewForConfig(clientConfig)
 	if err != nil {
 		return err
 	}
-	err = opt.Run()
+	projectRequest := &projectv1.ProjectRequest{}
+	projectRequest.Name = name
+	projectRequest.DisplayName = display
+	projectRequest.Description = desc
+
+	newProject, err := projectClient.ProjectV1().ProjectRequests().Create(projectRequest)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			return setCurrentProject(f, name, out)
+			return setCurrentProject(userFactory, name, out)
 		}
 		return err
 	}
+
+	fmt.Fprintf(out, requestProjectSwitchProjectOutput, "oc", newProject.Name, clientConfig.Host)
 	return nil
 }
 
 func setCurrentProject(f genericclioptions.RESTClientGetter, name string, out io.Writer) error {
+	config, err := f.ToRawKubeConfigLoader().RawConfig()
+	if err != nil {
+		return err
+	}
+	config.CurrentContext = name
+
+	// TODO: Make the kubeconfig shared helper
 	pathOptions := kubeconfig.NewPathOptionsWithConfig("")
-	opt := &project.ProjectOptions{PathOptions: pathOptions, IOStreams: genericclioptions.IOStreams{Out: out, ErrOut: ioutil.Discard}}
-	opt.Complete(f, []string{name})
-	return opt.RunProject()
+	return kclientcmd.ModifyConfig(pathOptions, config, true)
 }
 
 func LoggedInUserFactory() (genericclioptions.RESTClientGetter, error) {

@@ -828,11 +828,7 @@ func (c *ClusterUpConfig) login(streams genericclioptions.IOStreams) error {
 
 // createProject creates a new project for the current user
 func (c *ClusterUpConfig) createProject(out io.Writer) error {
-	f, err := openshift.LoggedInUserFactory()
-	if err != nil {
-		return errors.NewError("cannot get logged in user client").WithCause(err)
-	}
-	return openshift.CreateProject(f, initialProjectName, initialProjectDisplay, initialProjectDesc, "oc", out)
+	return openshift.CreateProject(initialProjectName, initialProjectDisplay, initialProjectDesc, out)
 }
 
 // serverInfo displays server information after a successful start
