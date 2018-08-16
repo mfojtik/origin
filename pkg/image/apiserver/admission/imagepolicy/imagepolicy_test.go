@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,9 +43,9 @@ func init() {
 	configinstall.InstallLegacyInternal(configapi.Scheme)
 }
 
-type resolveFunc func(ref *kapi.ObjectReference, defaultNamespace string, forceLocalResolve bool) (*rules.ImagePolicyAttributes, error)
+type resolveFunc func(ref *corev1.ObjectReference, defaultNamespace string, forceLocalResolve bool) (*rules.ImagePolicyAttributes, error)
 
-func (fn resolveFunc) ResolveObjectReference(ref *kapi.ObjectReference, defaultNamespace string, forceLocalResolve bool) (*rules.ImagePolicyAttributes, error) {
+func (fn resolveFunc) ResolveObjectReference(ref *corev1.ObjectReference, defaultNamespace string, forceLocalResolve bool) (*rules.ImagePolicyAttributes, error) {
 	return fn(ref, defaultNamespace, forceLocalResolve)
 }
 
@@ -420,7 +421,8 @@ func TestAdmissionResolution(t *testing.T) {
 	})
 	setDefaultCache(p)
 
-	p.resolver = resolveFunc(func(ref *kapi.ObjectReference, defaultNamespace string, forceLocalResolve bool) (*rules.ImagePolicyAttributes, error) {
+	p.resolver = resolveFunc(func(ref *corev1.ObjectReference, defaultNamespace string, forceLocalResolve bool) (*rules.ImagePolicyAttributes,
+		error) {
 		switch ref.Name {
 		case "index.docker.io/mysql:latest":
 			return &rules.ImagePolicyAttributes{

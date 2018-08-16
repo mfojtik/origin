@@ -7,34 +7,34 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
+	"k8s.io/client-go/kubernetes/fake"
 	clientgotesting "k8s.io/client-go/testing"
-	kapi "k8s.io/kubernetes/pkg/apis/core"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
 
+	buildfakeclient "github.com/openshift/client-go/build/clientset/versioned/fake"
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
-	buildfakeclient "github.com/openshift/origin/pkg/build/generated/internalclientset/fake"
 )
 
 func newPodClient() *fake.Clientset {
 	return fake.NewSimpleClientset(
-		mockPod(kapi.PodPending, "pending-build"),
-		mockPod(kapi.PodRunning, "running-build"),
-		mockPod(kapi.PodSucceeded, "succeeded-build"),
-		mockPod(kapi.PodFailed, "failed-build"),
-		mockPod(kapi.PodUnknown, "unknown-build"),
+		mockPod(corev1.PodPending, "pending-build"),
+		mockPod(corev1.PodRunning, "running-build"),
+		mockPod(corev1.PodSucceeded, "succeeded-build"),
+		mockPod(corev1.PodFailed, "failed-build"),
+		mockPod(corev1.PodUnknown, "unknown-build"),
 	)
 }
 
 func anotherNewPodClient() *fake.Clientset {
 	return fake.NewSimpleClientset(
-		mockPod(kapi.PodSucceeded, "bc-1-build"),
-		mockPod(kapi.PodSucceeded, "bc-2-build"),
-		mockPod(kapi.PodSucceeded, "bc-3-build"),
+		mockPod(corev1.PodSucceeded, "bc-1-build"),
+		mockPod(corev1.PodSucceeded, "bc-2-build"),
+		mockPod(corev1.PodSucceeded, "bc-3-build"),
 	)
 }
 
@@ -140,7 +140,7 @@ func TestWaitForBuild(t *testing.T) {
 			PodClient:   newPodClient().Core(),
 			Timeout:     defaultTimeout,
 		}
-		getSimplePodLogsFn := func(podNamespace, podName string, logOpts *kapi.PodLogOptions) (runtime.Object, error) {
+		getSimplePodLogsFn := func(podNamespace, podName string, logOpts *corev1.PodLogOptions) (runtime.Object, error) {
 			return nil, nil
 		}
 		storage.getSimpleLogsFn = getSimplePodLogsFn
@@ -188,7 +188,7 @@ func resourceLocationHelper(BuildPhase buildapi.BuildPhase, podPhase string, ctx
 	actualPodNamespace := ""
 	actualPodName := ""
 	actualContainer := ""
-	getSimplePodLogsFn := func(podNamespace, podName string, logOpts *kapi.PodLogOptions) (runtime.Object, error) {
+	getSimplePodLogsFn := func(podNamespace, podName string, logOpts *corev1.PodLogOptions) (runtime.Object, error) {
 		actualPodNamespace = podNamespace
 		actualPodName = podName
 		actualContainer = logOpts.Container
@@ -205,21 +205,21 @@ func resourceLocationHelper(BuildPhase buildapi.BuildPhase, podPhase string, ctx
 
 }
 
-func mockPod(podPhase kapi.PodPhase, podName string) *kapi.Pod {
-	return &kapi.Pod{
+func mockPod(podPhase corev1.PodPhase, podName string) *corev1.Pod {
+	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
 			Namespace: metav1.NamespaceDefault,
 		},
-		Spec: kapi.PodSpec{
-			Containers: []kapi.Container{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
 				{
 					Name: "foo-container",
 				},
 			},
 			NodeName: "foo-host",
 		},
-		Status: kapi.PodStatus{
+		Status: corev1.PodStatus{
 			Phase: podPhase,
 		},
 	}
@@ -258,7 +258,7 @@ func TestPreviousBuildLogs(t *testing.T) {
 	actualPodNamespace := ""
 	actualPodName := ""
 	actualContainer := ""
-	getSimplePodLogsFn := func(podNamespace, podName string, logOpts *kapi.PodLogOptions) (runtime.Object, error) {
+	getSimplePodLogsFn := func(podNamespace, podName string, logOpts *corev1.PodLogOptions) (runtime.Object, error) {
 		actualPodNamespace = podNamespace
 		actualPodName = podName
 		actualContainer = logOpts.Container

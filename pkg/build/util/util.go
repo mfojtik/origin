@@ -9,12 +9,15 @@ import (
 	"github.com/golang/glog"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	ktypedclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/kubernetes/pkg/credentialprovider"
 	credentialprovidersecrets "k8s.io/kubernetes/pkg/credentialprovider/secrets"
 
 	buildv1 "github.com/openshift/api/build/v1"
 	buildlister "github.com/openshift/client-go/build/listers/build/v1"
+	"github.com/openshift/origin/pkg/api/apihelpers"
 	"github.com/openshift/origin/pkg/build/buildapihelpers"
 )
 
@@ -27,6 +30,9 @@ const (
 
 	// BuilderServiceAccountName is the name of the account used to run build pods by default.
 	BuilderServiceAccountName = "builder"
+
+	// buildPodSuffix is the suffix used to append to a build pod name given a build name
+	buildPodSuffix = "build"
 )
 
 var (
@@ -34,6 +40,11 @@ var (
 	// to all the build containers.
 	InputContentPath = filepath.Join(BuildWorkDirMount, "inputs")
 )
+
+// GetBuildPodName returns name of the build pod.
+func GetBuildPodName(build *buildv1.Build) string {
+	return apihelpers.GetPodName(build.Name, buildPodSuffix)
+}
 
 // IsBuildComplete returns whether the provided build is complete or not
 func IsBuildComplete(build *buildv1.Build) bool {
@@ -234,6 +245,47 @@ func FindDockerSecretAsReference(secrets []corev1.Secret, image string) *corev1.
 	return nil
 }
 
+// FetchServiceAccountSecrets retrieves the Secrets used for pushing and pulling
+// images from private Docker registries.
+func FetchServiceAccountSecrets(client ktypedclient.CoreV1Interface, namespace, serviceAccount string) ([]corev1.Secret, error) {
+	var result []corev1.Secret
+	sa, err := client.ServiceAccounts(namespace).Get(serviceAccount, metav1.GetOptions{})
+	if err != nil {
+		return result, fmt.Errorf("Error getting push/pull secrets for service account %s/%s: %v", namespace, serviceAccount, err)
+	}
+	for _, ref := range sa.Secrets {
+		secret, err := client.Secrets(namespace).Get(ref.Name, metav1.GetOptions{})
+		if err != nil {
+			continue
+		}
+		result = append(result, *secret)
+	}
+	return result, nil
+}
+
+// UpdateCustomImageEnv updates base image env variable reference with the new image for a custom build strategy.
+// If no env variable reference exists, create a new env variable.
+func UpdateCustomImageEnv(strategy *buildv1.CustomBuildStrategy, newImage string) {
+	if strategy.Env == nil {
+		strategy.Env = make([]corev1.EnvVar, 1)
+		strategy.Env[0] = corev1.EnvVar{Name: CustomBuildStrategyBaseImageKey, Value: newImage}
+	} else {
+		found := false
+		for i := range strategy.Env {
+			glog.V(4).Infof("Checking env variable %s %s", strategy.Env[i].Name, strategy.Env[i].Value)
+			if strategy.Env[i].Name == CustomBuildStrategyBaseImageKey {
+				found = true
+				strategy.Env[i].Value = newImage
+				glog.V(4).Infof("Updated env variable %s to %s", strategy.Env[i].Name, strategy.Env[i].Value)
+				break
+			}
+		}
+		if !found {
+			strategy.Env = append(strategy.Env, corev1.EnvVar{Name: CustomBuildStrategyBaseImageKey, Value: newImage})
+		}
+	}
+}
+
 // ParseProxyURL parses a proxy URL and allows fallback to non-URLs like
 // myproxy:80 (for example) which url.Parse no longer accepts in Go 1.8.  The
 // logic is copied from net/http.ProxyFromEnvironment to try to maintain
@@ -252,4 +304,19 @@ func ParseProxyURL(proxy string) (*url.URL, error) {
 	}
 
 	return proxyURL, err
+}
+
+// GetInputReference returns the From ObjectReference associated with the
+// BuildStrategy.
+func GetInputReference(strategy buildv1.BuildStrategy) *corev1.ObjectReference {
+	switch {
+	case strategy.SourceStrategy != nil:
+		return &strategy.SourceStrategy.From
+	case strategy.DockerStrategy != nil:
+		return strategy.DockerStrategy.From
+	case strategy.CustomStrategy != nil:
+		return &strategy.CustomStrategy.From
+	default:
+		return nil
+	}
 }

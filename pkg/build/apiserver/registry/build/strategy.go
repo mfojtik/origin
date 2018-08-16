@@ -12,7 +12,6 @@ import (
 
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/build/apis/build/validation"
-	buildutil "github.com/openshift/origin/pkg/build/util"
 )
 
 // strategy implements behavior for Build objects
@@ -97,7 +96,7 @@ func (detailsStrategy) PrepareForUpdate(ctx context.Context, obj, old runtime.Ob
 	// a completed phase.
 	phase := oldBuild.Status.Phase
 	stages := newBuild.Status.Stages
-	if buildutil.IsBuildComplete(newBuild) {
+	if buildapi.IsInternalBuildComplete(newBuild) {
 		phase = newBuild.Status.Phase
 	}
 	revision := newBuild.Spec.Revision

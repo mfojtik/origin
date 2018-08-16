@@ -27,7 +27,6 @@ import (
 	"github.com/openshift/origin/pkg/build/buildscheme"
 	buildmanualclient "github.com/openshift/origin/pkg/build/client"
 	buildutil "github.com/openshift/origin/pkg/build/controller/common"
-	buildgenerator "github.com/openshift/origin/pkg/build/generator"
 	"github.com/openshift/origin/pkg/build/util"
 )
 
@@ -136,7 +135,7 @@ func (c *BuildConfigController) handleBuildConfig(bc *buildv1.BuildConfig) error
 		if kerrors.IsConflict(err) {
 			instantiateErr = fmt.Errorf("unable to instantiate Build for BuildConfig %s due to a conflicting update: %v", bcDesc(bc), err)
 			utilruntime.HandleError(instantiateErr)
-		} else if buildgenerator.IsFatal(err) || kerrors.IsNotFound(err) || kerrors.IsBadRequest(err) || kerrors.IsForbidden(err) {
+		} else if kerrors.IsNotFound(err) || kerrors.IsBadRequest(err) || kerrors.IsForbidden(err) {
 			instantiateErr = fmt.Errorf("gave up on Build for BuildConfig %s due to fatal error: %v", bcDesc(bc), err)
 			utilruntime.HandleError(instantiateErr)
 			// Fixes https://github.com/openshift/origin/issues/16557

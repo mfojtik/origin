@@ -11,17 +11,19 @@ import (
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	clientesting "k8s.io/client-go/testing"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	kapi "k8s.io/kubernetes/pkg/apis/core"
 
-	buildapiv1 "github.com/openshift/api/build/v1"
+	buildv1 "github.com/openshift/api/build/v1"
+	buildfake "github.com/openshift/client-go/build/clientset/versioned/fake"
 	_ "github.com/openshift/origin/pkg/api/install"
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
-	fakebuildclient "github.com/openshift/origin/pkg/build/generated/internalclientset/fake"
 	"github.com/openshift/origin/pkg/build/webhook"
 	"github.com/openshift/origin/pkg/build/webhook/bitbucket"
 	"github.com/openshift/origin/pkg/build/webhook/github"
@@ -29,17 +31,17 @@ import (
 )
 
 type buildConfigInstantiator struct {
-	Build   *buildapi.Build
+	Build   *buildv1.Build
 	Err     error
-	Request *buildapi.BuildRequest
+	Request *buildv1.BuildRequest
 }
 
-func (i *buildConfigInstantiator) Instantiate(namespace string, request *buildapi.BuildRequest) (*buildapi.Build, error) {
+func (i *buildConfigInstantiator) Instantiate(namespace string, request *buildv1.BuildRequest) (*buildv1.Build, error) {
 	i.Request = request
 	if i.Build != nil {
 		return i.Build, i.Err
 	}
-	return &buildapi.Build{
+	return &buildv1.Build{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      request.Name,
 			Namespace: namespace,
@@ -48,30 +50,30 @@ func (i *buildConfigInstantiator) Instantiate(namespace string, request *buildap
 }
 
 type plugin struct {
-	Triggers              []*buildapi.WebHookTrigger
+	Triggers              []*buildv1.WebHookTrigger
 	Err                   error
-	Env                   []kapi.EnvVar
-	DockerStrategyOptions *buildapi.DockerStrategyOptions
+	Env                   []corev1.EnvVar
+	DockerStrategyOptions *buildv1.DockerStrategyOptions
 	Proceed               bool
 }
 
-func (p *plugin) Extract(buildCfg *buildapi.BuildConfig, trigger *buildapi.WebHookTrigger, req *http.Request) (*buildapi.SourceRevision, []kapi.EnvVar, *buildapi.DockerStrategyOptions, bool, error) {
-	p.Triggers = []*buildapi.WebHookTrigger{trigger}
+func (p *plugin) Extract(buildCfg *buildv1.BuildConfig, trigger *buildv1.WebHookTrigger, req *http.Request) (*buildv1.SourceRevision, []corev1.EnvVar, *buildv1.DockerStrategyOptions, bool, error) {
+	p.Triggers = []*buildv1.WebHookTrigger{trigger}
 	return nil, p.Env, p.DockerStrategyOptions, p.Proceed, p.Err
 }
-func (p *plugin) GetTriggers(buildConfig *buildapi.BuildConfig) ([]*buildapi.WebHookTrigger, error) {
-	trigger := &buildapi.WebHookTrigger{
+func (p *plugin) GetTriggers(buildConfig *buildv1.BuildConfig) ([]*buildv1.WebHookTrigger, error) {
+	trigger := &buildv1.WebHookTrigger{
 		Secret: "secret",
 	}
-	return []*buildapi.WebHookTrigger{trigger}, nil
+	return []*buildv1.WebHookTrigger{trigger}, nil
 }
-func newStorage() (*WebHook, *buildConfigInstantiator, *fakebuildclient.Clientset) {
-	fakeBuildClient := fakebuildclient.NewSimpleClientset()
+func newStorage() (*WebHook, *buildConfigInstantiator, *buildfake.Clientset) {
+	fakeBuildClient := buildfake.NewSimpleClientset()
 	bci := &buildConfigInstantiator{}
 	plugins := map[string]webhook.Plugin{
 		"ok": &plugin{Proceed: true},
 		"okenv": &plugin{
-			Env: []kapi.EnvVar{
+			Env: []corev1.EnvVar{
 				{
 					Name:  "foo",
 					Value: "bar",
@@ -83,7 +85,7 @@ func newStorage() (*WebHook, *buildConfigInstantiator, *fakebuildclient.Clientse
 		"errhook":   &plugin{Err: webhook.ErrHookNotEnabled},
 		"err":       &plugin{Err: fmt.Errorf("test error")},
 	}
-	hook := newWebHookREST(fakeBuildClient.Build(), nil, bci, buildapiv1.SchemeGroupVersion, plugins)
+	hook := newWebHookREST(fakeBuildClient.Build(), nil, bci, buildv1.SchemeGroupVersion, plugins)
 
 	return hook, bci, fakeBuildClient
 }
@@ -171,7 +173,7 @@ func TestConnectWebHook(t *testing.T) {
 				// We want to make sure that we return the created build in the body.
 				if w.Code == http.StatusOK && len(body) > 0 {
 					// The returned json needs to be a v1 Build specifically
-					newBuild := &buildapiv1.Build{}
+					newBuild := &buildv1.Build{}
 					err := json.Unmarshal(body, newBuild)
 					if err == nil {
 						return true
@@ -245,8 +247,8 @@ func TestConnectWebHook(t *testing.T) {
 
 type okBuildConfigInstantiator struct{}
 
-func (*okBuildConfigInstantiator) Instantiate(namespace string, request *buildapi.BuildRequest) (*buildapi.Build, error) {
-	return &buildapi.Build{
+func (*okBuildConfigInstantiator) Instantiate(namespace string, request *buildv1.BuildRequest) (*buildv1.Build, error) {
+	return &buildv1.Build{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      request.Name,
@@ -256,7 +258,7 @@ func (*okBuildConfigInstantiator) Instantiate(namespace string, request *buildap
 
 type errorBuildConfigInstantiator struct{}
 
-func (*errorBuildConfigInstantiator) Instantiate(namespace string, request *buildapi.BuildRequest) (*buildapi.Build, error) {
+func (*errorBuildConfigInstantiator) Instantiate(namespace string, request *buildv1.BuildRequest) (*buildv1.Build, error) {
 	return nil, errors.New("Build error!")
 }
 
@@ -275,28 +277,30 @@ func (*errorBuildConfigUpdater) Update(buildConfig *buildapi.BuildConfig) error 
 type pathPlugin struct {
 }
 
-func (p *pathPlugin) Extract(buildCfg *buildapi.BuildConfig, trigger *buildapi.WebHookTrigger, req *http.Request) (*buildapi.SourceRevision, []kapi.EnvVar, *buildapi.DockerStrategyOptions, bool, error) {
-	return nil, []kapi.EnvVar{}, nil, true, nil
+func (p *pathPlugin) Extract(buildCfg *buildv1.BuildConfig, trigger *buildv1.WebHookTrigger, req *http.Request) (*buildv1.SourceRevision,
+	[]corev1.EnvVar, *buildv1.DockerStrategyOptions, bool, error) {
+	return nil, []corev1.EnvVar{}, nil, true, nil
 }
 
-func (p *pathPlugin) GetTriggers(buildConfig *buildapi.BuildConfig) ([]*buildapi.WebHookTrigger, error) {
-	trigger := &buildapi.WebHookTrigger{
+func (p *pathPlugin) GetTriggers(buildConfig *buildv1.BuildConfig) ([]*buildv1.WebHookTrigger, error) {
+	trigger := &buildv1.WebHookTrigger{
 		Secret: "secret101",
 	}
-	return []*buildapi.WebHookTrigger{trigger}, nil
+	return []*buildv1.WebHookTrigger{trigger}, nil
 }
 
 type errPlugin struct {
 }
 
-func (*errPlugin) Extract(buildCfg *buildapi.BuildConfig, trigger *buildapi.WebHookTrigger, req *http.Request) (*buildapi.SourceRevision, []kapi.EnvVar, *buildapi.DockerStrategyOptions, bool, error) {
-	return nil, []kapi.EnvVar{}, nil, false, errors.New("Plugin error!")
+func (*errPlugin) Extract(buildCfg *buildv1.BuildConfig, trigger *buildv1.WebHookTrigger, req *http.Request) (*buildv1.SourceRevision,
+	[]corev1.EnvVar, *buildv1.DockerStrategyOptions, bool, error) {
+	return nil, []corev1.EnvVar{}, nil, false, errors.New("Plugin error!")
 }
-func (p *errPlugin) GetTriggers(buildConfig *buildapi.BuildConfig) ([]*buildapi.WebHookTrigger, error) {
-	trigger := &buildapi.WebHookTrigger{
+func (p *errPlugin) GetTriggers(buildConfig *buildv1.BuildConfig) ([]*buildv1.WebHookTrigger, error) {
+	trigger := &buildv1.WebHookTrigger{
 		Secret: "secret101",
 	}
-	return []*buildapi.WebHookTrigger{trigger}, nil
+	return []*buildv1.WebHookTrigger{trigger}, nil
 }
 
 var testBuildConfig = &buildapi.BuildConfig{
@@ -343,7 +347,9 @@ var mockBuildStrategy = buildapi.BuildStrategy{
 
 func TestParseUrlError(t *testing.T) {
 	responder := &fakeResponder{}
-	handler, _ := newWebHookREST(fakebuildclient.NewSimpleClientset(testBuildConfig).Build(), nil, &okBuildConfigInstantiator{}, buildapiv1.SchemeGroupVersion, map[string]webhook.Plugin{"github": github.New(), "gitlab": gitlab.New(), "bitbucket": bitbucket.New()}).
+	handler, _ := newWebHookREST(buildfake.NewSimpleClientset(testBuildConfig).Build(), nil, &okBuildConfigInstantiator{},
+		buildv1.SchemeGroupVersion,
+		map[string]webhook.Plugin{"github": github.New(), "gitlab": gitlab.New(), "bitbucket": bitbucket.New()}).
 		Connect(apirequest.WithNamespace(apirequest.NewDefaultContext(), testBuildConfig.Namespace), "build100", &kapi.PodProxyOptions{Path: ""}, responder)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -360,7 +366,8 @@ func TestParseUrlError(t *testing.T) {
 
 func TestParseUrlOK(t *testing.T) {
 	responder := &fakeResponder{}
-	handler, _ := newWebHookREST(fakebuildclient.NewSimpleClientset(testBuildConfig).Build(), nil, &okBuildConfigInstantiator{}, buildapiv1.SchemeGroupVersion, map[string]webhook.Plugin{"pathplugin": &pathPlugin{}}).
+	handler, _ := newWebHookREST(buildfake.NewSimpleClientset(testBuildConfig).Build(), nil, &okBuildConfigInstantiator{}, buildv1.SchemeGroupVersion,
+		map[string]webhook.Plugin{"pathplugin": &pathPlugin{}}).
 		Connect(apirequest.WithNamespace(apirequest.NewDefaultContext(), testBuildConfig.Namespace), "build100", &kapi.PodProxyOptions{Path: "secret101/pathplugin"}, responder)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -377,7 +384,8 @@ func TestParseUrlOK(t *testing.T) {
 func TestParseUrlLong(t *testing.T) {
 	plugin := &pathPlugin{}
 	responder := &fakeResponder{}
-	handler, _ := newWebHookREST(fakebuildclient.NewSimpleClientset(testBuildConfig).Build(), nil, &okBuildConfigInstantiator{}, buildapiv1.SchemeGroupVersion, map[string]webhook.Plugin{"pathplugin": plugin}).
+	handler, _ := newWebHookREST(buildfake.NewSimpleClientset(testBuildConfig).Build(), nil, &okBuildConfigInstantiator{},
+		buildv1.SchemeGroupVersion, map[string]webhook.Plugin{"pathplugin": plugin}).
 		Connect(apirequest.WithNamespace(apirequest.NewDefaultContext(), testBuildConfig.Namespace), "build100", &kapi.PodProxyOptions{Path: "secret101/pathplugin/some/more/args"}, responder)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -394,7 +402,7 @@ func TestParseUrlLong(t *testing.T) {
 
 func TestInvokeWebhookMissingPlugin(t *testing.T) {
 	responder := &fakeResponder{}
-	handler, _ := newWebHookREST(fakebuildclient.NewSimpleClientset(testBuildConfig).Build(), nil, &okBuildConfigInstantiator{}, buildapiv1.SchemeGroupVersion, map[string]webhook.Plugin{"pathplugin": &pathPlugin{}}).
+	handler, _ := newWebHookREST(buildfake.NewSimpleClientset(testBuildConfig).Build(), nil, &okBuildConfigInstantiator{}, buildv1.SchemeGroupVersion, map[string]webhook.Plugin{"pathplugin": &pathPlugin{}}).
 		Connect(apirequest.WithNamespace(apirequest.NewDefaultContext(), testBuildConfig.Namespace), "build100", &kapi.PodProxyOptions{Path: "secret101/missingplugin"}, responder)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -411,7 +419,7 @@ func TestInvokeWebhookMissingPlugin(t *testing.T) {
 
 func TestInvokeWebhookErrorBuildConfigInstantiate(t *testing.T) {
 	responder := &fakeResponder{}
-	handler, _ := newWebHookREST(fakebuildclient.NewSimpleClientset(testBuildConfig).Build(), nil, &errorBuildConfigInstantiator{}, buildapiv1.SchemeGroupVersion, map[string]webhook.Plugin{"pathplugin": &pathPlugin{}}).
+	handler, _ := newWebHookREST(buildfake.NewSimpleClientset(testBuildConfig).Build(), nil, &errorBuildConfigInstantiator{}, buildv1.SchemeGroupVersion, map[string]webhook.Plugin{"pathplugin": &pathPlugin{}}).
 		Connect(apirequest.WithNamespace(apirequest.NewDefaultContext(), testBuildConfig.Namespace), "build100", &kapi.PodProxyOptions{Path: "secret101/pathplugin"}, responder)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -428,7 +436,7 @@ func TestInvokeWebhookErrorBuildConfigInstantiate(t *testing.T) {
 
 func TestInvokeWebhookErrorGetConfig(t *testing.T) {
 	responder := &fakeResponder{}
-	handler, _ := newWebHookREST(fakebuildclient.NewSimpleClientset(testBuildConfig).Build(), nil, &okBuildConfigInstantiator{}, buildapiv1.SchemeGroupVersion, map[string]webhook.Plugin{"pathplugin": &pathPlugin{}}).
+	handler, _ := newWebHookREST(buildfake.NewSimpleClientset(testBuildConfig).Build(), nil, &okBuildConfigInstantiator{}, buildv1.SchemeGroupVersion, map[string]webhook.Plugin{"pathplugin": &pathPlugin{}}).
 		Connect(apirequest.WithNamespace(apirequest.NewDefaultContext(), testBuildConfig.Namespace), "badbuild100", &kapi.PodProxyOptions{Path: "secret101/pathplugin"}, responder)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -447,7 +455,7 @@ func TestInvokeWebhookErrorGetConfig(t *testing.T) {
 
 func TestInvokeWebhookErrorCreateBuild(t *testing.T) {
 	responder := &fakeResponder{}
-	handler, _ := newWebHookREST(fakebuildclient.NewSimpleClientset(testBuildConfig).Build(), nil, &okBuildConfigInstantiator{}, buildapiv1.SchemeGroupVersion, map[string]webhook.Plugin{"errPlugin": &errPlugin{}}).
+	handler, _ := newWebHookREST(buildfake.NewSimpleClientset(testBuildConfig).Build(), nil, &okBuildConfigInstantiator{}, buildv1.SchemeGroupVersion, map[string]webhook.Plugin{"errPlugin": &errPlugin{}}).
 		Connect(apirequest.WithNamespace(apirequest.NewDefaultContext(), testBuildConfig.Namespace), "build100", &kapi.PodProxyOptions{Path: "secret101/errPlugin"}, responder)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -477,10 +485,15 @@ func TestGeneratedBuildTriggerInfoGenericWebHook(t *testing.T) {
 		},
 	}
 
-	buildtriggerCause := webhook.GenerateBuildTriggerInfo(revision, "generic")
+	externalRevision := &buildv1.SourceRevision{}
+	if err := legacyscheme.Scheme.Convert(revision, externalRevision, nil); err != nil {
+		panic(err)
+	}
+
+	buildtriggerCause := webhook.GenerateBuildTriggerInfo(externalRevision, "generic")
 	hiddenSecret := "<secret>"
 	for _, cause := range buildtriggerCause {
-		if !reflect.DeepEqual(revision, cause.GenericWebHook.Revision) {
+		if !reflect.DeepEqual(externalRevision, cause.GenericWebHook.Revision) {
 			t.Errorf("Expected returned revision to equal: %v", revision)
 		}
 		if cause.GenericWebHook.Secret != hiddenSecret {
@@ -506,11 +519,15 @@ func TestGeneratedBuildTriggerInfoGitHubWebHook(t *testing.T) {
 			Message: "A random act of kindness",
 		},
 	}
+	externalRevision := &buildv1.SourceRevision{}
+	if err := legacyscheme.Scheme.Convert(revision, externalRevision, nil); err != nil {
+		panic(err)
+	}
 
-	buildtriggerCause := webhook.GenerateBuildTriggerInfo(revision, "github")
+	buildtriggerCause := webhook.GenerateBuildTriggerInfo(externalRevision, "github")
 	hiddenSecret := "<secret>"
 	for _, cause := range buildtriggerCause {
-		if !reflect.DeepEqual(revision, cause.GitHubWebHook.Revision) {
+		if !reflect.DeepEqual(externalRevision, cause.GitHubWebHook.Revision) {
 			t.Errorf("Expected returned revision to equal: %v", revision)
 		}
 		if cause.GitHubWebHook.Secret != hiddenSecret {
@@ -536,11 +553,15 @@ func TestGeneratedBuildTriggerInfoGitLabWebHook(t *testing.T) {
 			Message: "A random act of kindness",
 		},
 	}
+	externalRevision := &buildv1.SourceRevision{}
+	if err := legacyscheme.Scheme.Convert(revision, externalRevision, nil); err != nil {
+		panic(err)
+	}
 
-	buildtriggerCause := webhook.GenerateBuildTriggerInfo(revision, "gitlab")
+	buildtriggerCause := webhook.GenerateBuildTriggerInfo(externalRevision, "gitlab")
 	hiddenSecret := "<secret>"
 	for _, cause := range buildtriggerCause {
-		if !reflect.DeepEqual(revision, cause.GitLabWebHook.Revision) {
+		if !reflect.DeepEqual(externalRevision, cause.GitLabWebHook.Revision) {
 			t.Errorf("Expected returned revision to equal: %v", revision)
 		}
 		if cause.GitLabWebHook.Secret != hiddenSecret {
@@ -566,11 +587,15 @@ func TestGeneratedBuildTriggerInfoBitbucketWebHook(t *testing.T) {
 			Message: "A random act of kindness",
 		},
 	}
+	externalRevision := &buildv1.SourceRevision{}
+	if err := legacyscheme.Scheme.Convert(revision, externalRevision, nil); err != nil {
+		panic(err)
+	}
 
-	buildtriggerCause := webhook.GenerateBuildTriggerInfo(revision, "bitbucket")
+	buildtriggerCause := webhook.GenerateBuildTriggerInfo(externalRevision, "bitbucket")
 	hiddenSecret := "<secret>"
 	for _, cause := range buildtriggerCause {
-		if !reflect.DeepEqual(revision, cause.BitbucketWebHook.Revision) {
+		if !reflect.DeepEqual(externalRevision, cause.BitbucketWebHook.Revision) {
 			t.Errorf("Expected returned revision to equal: %v", revision)
 		}
 		if cause.BitbucketWebHook.Secret != hiddenSecret {

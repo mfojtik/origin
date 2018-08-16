@@ -38,7 +38,6 @@ import (
 	"github.com/openshift/origin/pkg/build/controller/common"
 	"github.com/openshift/origin/pkg/build/controller/policy"
 	"github.com/openshift/origin/pkg/build/controller/strategy"
-	buildgenerator "github.com/openshift/origin/pkg/build/generator"
 	buildutil "github.com/openshift/origin/pkg/build/util"
 	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 	imageinformers "github.com/openshift/origin/pkg/image/generated/informers/internalversion/image/internalversion"
@@ -520,7 +519,7 @@ func (bc *BuildController) resolveImageSecretAsReference(build *buildv1.Build, i
 	if len(serviceAccount) == 0 {
 		serviceAccount = buildutil.BuilderServiceAccountName
 	}
-	builderSecrets, err := buildgenerator.FetchServiceAccountSecrets(bc.kubeClient.CoreV1(), bc.kubeClient.CoreV1(), build.Namespace, serviceAccount)
+	builderSecrets, err := buildutil.FetchServiceAccountSecrets(bc.kubeClient.CoreV1(), build.Namespace, serviceAccount)
 	if err != nil {
 		return nil, fmt.Errorf("Error getting push/pull secrets for service account %s/%s: %v", build.Namespace, serviceAccount, err)
 	}
@@ -868,7 +867,7 @@ func (bc *BuildController) createBuildPod(build *buildv1.Build) (*buildUpdate, e
 	}
 
 	if build.Spec.Strategy.CustomStrategy != nil {
-		buildgenerator.UpdateCustomImageEnv(build.Spec.Strategy.CustomStrategy, build.Spec.Strategy.CustomStrategy.From.Name)
+		buildutil.UpdateCustomImageEnv(build.Spec.Strategy.CustomStrategy, build.Spec.Strategy.CustomStrategy.From.Name)
 	}
 
 	// Create the build pod spec
