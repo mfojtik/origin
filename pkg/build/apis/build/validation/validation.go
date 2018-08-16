@@ -18,9 +18,8 @@ import (
 	kapihelper "k8s.io/kubernetes/pkg/apis/core/helper"
 	"k8s.io/kubernetes/pkg/apis/core/validation"
 
-	buildapiv1 "github.com/openshift/api/build/v1"
+	buildv1 "github.com/openshift/api/build/v1"
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
-	"github.com/openshift/origin/pkg/build/buildapihelpers"
 	"github.com/openshift/origin/pkg/build/buildscheme"
 	buildutil "github.com/openshift/origin/pkg/build/util"
 	imageapi "github.com/openshift/origin/pkg/image/apis/image"
@@ -28,6 +27,21 @@ import (
 	"github.com/openshift/origin/pkg/util/labelselector"
 	s2igit "github.com/openshift/source-to-image/pkg/scm/git"
 )
+
+// buildToPodLogOptions builds a PodLogOptions object out of a BuildLogOptions.
+// Currently BuildLogOptions.Container and BuildLogOptions.Previous aren't used
+// so they won't be copied to PodLogOptions.
+// TODO: This is a copy of external helper
+func buildToPodLogOptions(opts *buildapi.BuildLogOptions) *kapi.PodLogOptions {
+	return &kapi.PodLogOptions{
+		Follow:       opts.Follow,
+		SinceSeconds: opts.SinceSeconds,
+		SinceTime:    opts.SinceTime,
+		Timestamps:   opts.Timestamps,
+		TailLines:    opts.TailLines,
+		LimitBytes:   opts.LimitBytes,
+	}
+}
 
 // ValidateBuild tests required fields for a Build.
 func ValidateBuild(build *buildapi.Build) field.ErrorList {
@@ -42,7 +56,7 @@ func ValidateBuildUpdate(build *buildapi.Build, older *buildapi.Build) field.Err
 	allErrs = append(allErrs, validation.ValidateObjectMetaUpdate(&build.ObjectMeta, &older.ObjectMeta, field.NewPath("metadata"))...)
 	allErrs = append(allErrs, validation.ValidateObjectMeta(&build.ObjectMeta, true, validation.NameIsDNSSubdomain, field.NewPath("metadata"))...)
 
-	if buildutil.IsBuildComplete(older) && older.Status.Phase != build.Status.Phase {
+	if buildapi.IsInternalBuildComplete(older) && older.Status.Phase != build.Status.Phase {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("status", "phase"), build.Status.Phase, "phase cannot be updated from a terminal state"))
 	}
 
@@ -85,7 +99,7 @@ func ValidateBuildConfig(config *buildapi.BuildConfig) field.ErrorList {
 	fromRefs := map[string]struct{}{}
 	specPath := field.NewPath("spec")
 	triggersPath := specPath.Child("triggers")
-	buildFrom := buildapihelpers.GetInputReference(config.Spec.Strategy)
+	buildFrom := buildapi.GetInternalInputReference(config.Spec.Strategy)
 	for i, trg := range config.Spec.Triggers {
 		allErrs = append(allErrs, validateTrigger(&trg, buildFrom, triggersPath.Index(i))...)
 		if trg.Type != buildapi.ImageChangeBuildTriggerType || trg.ImageChange == nil {
@@ -665,7 +679,7 @@ func ValidateBuildLogOptions(opts *buildapi.BuildLogOptions) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	// TODO: Replace by validating PodLogOptions via BuildLogOptions once it's bundled in
-	popts := buildapihelpers.BuildToPodLogOptions(opts)
+	popts := buildToPodLogOptions(opts)
 	if errs := validation.ValidatePodLogOptions(popts); len(errs) > 0 {
 		allErrs = append(allErrs, errs...)
 	}
@@ -763,33 +777,9 @@ func CreateBuildPatch(older, newer *buildapi.Build) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error encoding older: %v", err)
 	}
-	patch, err := strategicpatch.CreateTwoWayMergePatch(olderJSON, newerJSON, &buildapiv1.Build{})
+	patch, err := strategicpatch.CreateTwoWayMergePatch(olderJSON, newerJSON, &buildv1.Build{})
 	if err != nil {
 		return nil, fmt.Errorf("error creating a strategic patch: %v", err)
 	}
 	return patch, nil
-}
-
-func ApplyBuildPatch(build *buildapi.Build, patch []byte) (*buildapi.Build, error) {
-	versionedBuild, err := buildscheme.InternalExternalScheme.ConvertToVersion(build, buildapiv1.SchemeGroupVersion)
-	if err != nil {
-		return nil, err
-	}
-	buildJSON, err := runtime.Encode(buildscheme.Encoder, versionedBuild)
-	if err != nil {
-		return nil, err
-	}
-	patchedJSON, err := strategicpatch.StrategicMergePatch(buildJSON, patch, &buildapiv1.Build{})
-	if err != nil {
-		return nil, err
-	}
-	patchedVersionedBuild, err := runtime.Decode(buildscheme.Decoder, patchedJSON)
-	if err != nil {
-		return nil, err
-	}
-	patchedBuild, err := buildscheme.InternalExternalScheme.ConvertToVersion(patchedVersionedBuild, buildapi.SchemeGroupVersion)
-	if err != nil {
-		return nil, err
-	}
-	return patchedBuild.(*buildapi.Build), nil
 }

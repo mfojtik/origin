@@ -6,6 +6,7 @@ import (
 	appsv1beta1 "k8s.io/api/apps/v1beta1"
 	batchv1 "k8s.io/api/batch/v1"
 	batchv2alpha1 "k8s.io/api/batch/v2alpha1"
+	corev1 "k8s.io/api/core/v1"
 	kapiv1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -255,7 +256,7 @@ func (m *podSpecMutator) Mutate(fn ImageReferenceMutateFunc) field.ErrorList {
 		if hasIdenticalPodSpecImage(m.oldSpec, container.Name, container.Image) {
 			continue
 		}
-		ref := kapi.ObjectReference{Kind: "DockerImage", Name: container.Image}
+		ref := corev1.ObjectReference{Kind: "DockerImage", Name: container.Image}
 		if err := fn(&ref); err != nil {
 			errs = append(errs, fieldErrorOrInternal(err, m.path.Child("initContainers").Index(i).Child("image")))
 			continue
@@ -271,7 +272,7 @@ func (m *podSpecMutator) Mutate(fn ImageReferenceMutateFunc) field.ErrorList {
 		if hasIdenticalPodSpecImage(m.oldSpec, container.Name, container.Image) {
 			continue
 		}
-		ref := kapi.ObjectReference{Kind: "DockerImage", Name: container.Image}
+		ref := corev1.ObjectReference{Kind: "DockerImage", Name: container.Image}
 		if err := fn(&ref); err != nil {
 			errs = append(errs, fieldErrorOrInternal(err, m.path.Child("containers").Index(i).Child("image")))
 			continue
@@ -356,7 +357,7 @@ func (m *podSpecV1Mutator) Mutate(fn ImageReferenceMutateFunc) field.ErrorList {
 		if hasIdenticalPodSpecV1Image(m.oldSpec, container.Name, container.Image) {
 			continue
 		}
-		ref := kapi.ObjectReference{Kind: "DockerImage", Name: container.Image}
+		ref := corev1.ObjectReference{Kind: "DockerImage", Name: container.Image}
 		if err := fn(&ref); err != nil {
 			errs = append(errs, fieldErrorOrInternal(err, m.path.Child("initContainers").Index(i).Child("image")))
 			continue
@@ -372,7 +373,7 @@ func (m *podSpecV1Mutator) Mutate(fn ImageReferenceMutateFunc) field.ErrorList {
 		if hasIdenticalPodSpecV1Image(m.oldSpec, container.Name, container.Image) {
 			continue
 		}
-		ref := kapi.ObjectReference{Kind: "DockerImage", Name: container.Image}
+		ref := corev1.ObjectReference{Kind: "DockerImage", Name: container.Image}
 		if err := fn(&ref); err != nil {
 			errs = append(errs, fieldErrorOrInternal(err, m.path.Child("containers").Index(i).Child("image")))
 			continue

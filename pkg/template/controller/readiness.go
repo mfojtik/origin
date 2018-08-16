@@ -29,10 +29,10 @@ import (
 func checkBuildReadiness(obj runtime.Object) (bool, bool, error) {
 	b := obj.(*buildapi.Build)
 
-	ready := buildutil.IsTerminalPhase(b.Status.Phase) &&
+	ready := buildapi.IsInternalTerminalPhase(b.Status.Phase) &&
 		b.Status.Phase == buildapi.BuildPhaseComplete
 
-	failed := buildutil.IsTerminalPhase(b.Status.Phase) &&
+	failed := buildapi.IsInternalTerminalPhase(b.Status.Phase) &&
 		b.Status.Phase != buildapi.BuildPhaseComplete
 
 	return ready, failed, nil

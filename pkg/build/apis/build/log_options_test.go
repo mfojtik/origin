@@ -4,11 +4,11 @@ import (
 	"reflect"
 	"testing"
 
-	kapi "k8s.io/kubernetes/pkg/apis/core"
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestLogOptionsDrift(t *testing.T) {
-	popts := reflect.TypeOf(kapi.PodLogOptions{})
+	popts := reflect.TypeOf(corev1.PodLogOptions{})
 	bopts := reflect.TypeOf(BuildLogOptions{})
 
 	for i := 0; i < popts.NumField(); i++ {

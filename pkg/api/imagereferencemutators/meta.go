@@ -3,18 +3,18 @@ package imagereferencemutators
 import (
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	kapi "k8s.io/kubernetes/pkg/apis/core"
 
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	buildapi "github.com/openshift/api/build/v1"
 )
 
 // ImageReferenceMutateFunc is passed a reference representing an image, and may alter
 // the Name, Kind, and Namespace fields of the reference. If an error is returned the
 // object may still be mutated under the covers.
-type ImageReferenceMutateFunc func(ref *kapi.ObjectReference) error
+type ImageReferenceMutateFunc func(ref *corev1.ObjectReference) error
 
 type ImageReferenceMutator interface {
 	// Mutate invokes fn on every image reference in the object. If fn returns an error,
@@ -23,7 +23,7 @@ type ImageReferenceMutator interface {
 	Mutate(fn ImageReferenceMutateFunc) field.ErrorList
 }
 
-var errNoImageMutator = fmt.Errorf("No list of images available for this object")
+var errNoImageMutator = fmt.Errorf("no list of images available for this object")
 
 // GetImageReferenceMutator returns a mutator for the provided object, or an error if no
 // such mutator is defined. Only references that are different between obj and old will

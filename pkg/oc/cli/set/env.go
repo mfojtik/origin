@@ -17,9 +17,9 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	kapi "k8s.io/kubernetes/pkg/apis/core"
-	kinternalclientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/templates"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
@@ -32,7 +32,7 @@ import (
 	cmdutil "github.com/openshift/origin/pkg/cmd/util"
 	"github.com/openshift/origin/pkg/oc/util/clientcmd"
 	utilenv "github.com/openshift/origin/pkg/oc/util/env"
-	envresolve "github.com/openshift/origin/pkg/pod/envresolve"
+	"github.com/openshift/origin/pkg/pod/envresolve"
 )
 
 var (
@@ -108,7 +108,7 @@ type EnvOptions struct {
 	Encoder                runtime.Encoder
 	Mapper                 meta.RESTMapper
 	Client                 dynamic.Interface
-	KubeClient             kinternalclientset.Interface
+	KubeClient             kubernetes.Interface
 	Printer                printers.ResourcePrinter
 	Namespace              string
 	ExplicitNamespace      bool
@@ -185,7 +185,7 @@ func (o *EnvOptions) Complete(f kcmdutil.Factory, cmd *cobra.Command, args []str
 	}
 
 	var err error
-	o.KubeClient, err = f.ClientSet()
+	o.KubeClient, err = f.KubernetesClientSet()
 	if err != nil {
 		return err
 	}
@@ -371,13 +371,24 @@ func (o *EnvOptions) RunEnv() error {
 							continue
 						}
 
+						// TODO: For Maciej: the ConvertInteralPodSpecToExternal should not be needed?
+						valueFrom := &corev1.EnvVarSource{}
+						if err := legacyscheme.Scheme.Convert(env.ValueFrom, valueFrom, nil); err != nil {
+							panic(err)
+						}
+
 						// Print the reference version
 						if !o.Resolve {
-							fmt.Fprintf(o.Out, "# %s from %s\n", env.Name, envresolve.GetEnvVarRefString(env.ValueFrom))
+							fmt.Fprintf(o.Out, "# %s from %s\n", env.Name, envresolve.GetEnvVarRefString(valueFrom))
 							continue
 						}
 
-						value, err := envresolve.GetEnvVarRefValue(o.KubeClient, o.Namespace, store, env.ValueFrom, info.Object, c)
+						container := &corev1.Container{}
+						if err := legacyscheme.Scheme.Convert(&c, container, nil); err != nil {
+							panic(err)
+						}
+
+						value, err := envresolve.GetEnvVarRefValue(o.KubeClient, o.Namespace, store, valueFrom, info.Object, container)
 						// Print the resolved value
 						if err == nil {
 							fmt.Fprintf(o.Out, "%s=%s\n", env.Name, value)
@@ -385,7 +396,7 @@ func (o *EnvOptions) RunEnv() error {
 						}
 
 						// Print the reference version and save the resolve error
-						fmt.Fprintf(o.Out, "# %s from %s\n", env.Name, envresolve.GetEnvVarRefString(env.ValueFrom))
+						fmt.Fprintf(o.Out, "# %s from %s\n", env.Name, envresolve.GetEnvVarRefString(valueFrom))
 						errString := err.Error()
 						resolveErrors[errString] = append(resolveErrors[errString], env.Name)
 						resolutionErrorsEncountered = true

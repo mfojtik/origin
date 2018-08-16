@@ -8,7 +8,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	buildinternalapi "github.com/openshift/origin/pkg/build/apis/build"
 )
 
 const legacyBC = `{
@@ -25,7 +25,7 @@ func TestLegacyDecoding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.(*buildapi.BuildConfig).Name != "sinatra-app-example-a" {
+	if result.(*buildinternalapi.BuildConfig).Name != "sinatra-app-example-a" {
 		t.Fatal(spew.Sdump(result))
 	}
 
@@ -41,7 +41,7 @@ func TestLegacyDecoding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result2.(*buildapi.BuildConfig).Name != "sinatra-app-example-a" {
+	if result2.(*buildinternalapi.BuildConfig).Name != "sinatra-app-example-a" {
 		t.Fatal(spew.Sdump(result2))
 	}
 }
