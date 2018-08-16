@@ -12,10 +12,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	kapi "k8s.io/kubernetes/pkg/apis/core"
 	kprinters "k8s.io/kubernetes/pkg/printers"
 	kprintersinternal "k8s.io/kubernetes/pkg/printers/internalversion"
 
+	buildv1 "github.com/openshift/api/build/v1"
 	oapi "github.com/openshift/origin/pkg/api"
 	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
 	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
@@ -256,7 +258,7 @@ func printTemplateList(list *templateapi.TemplateList, w io.Writer, opts kprinte
 	return nil
 }
 
-func printBuild(build *buildapi.Build, w io.Writer, opts kprinters.PrintOptions) error {
+func printBuild(build *buildv1.Build, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, build.Name, opts.WithKind)
 
 	if opts.WithNamespace {
@@ -277,7 +279,8 @@ func printBuild(build *buildapi.Build, w io.Writer, opts kprinters.PrintOptions)
 	if len(build.Status.Reason) > 0 {
 		status = fmt.Sprintf("%s (%s)", status, build.Status.Reason)
 	}
-	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s", name, buildapihelpers.StrategyType(build.Spec.Strategy), from, status, created, duration); err != nil {
+	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s", name, buildapihelpers.StrategyType(build.Spec.Strategy), from, status, created,
+		duration); err != nil {
 		return err
 	}
 	if err := appendItemLabels(build.Labels, w, opts.ColumnLabels, opts.ShowLabels); err != nil {
@@ -286,7 +289,7 @@ func printBuild(build *buildapi.Build, w io.Writer, opts kprinters.PrintOptions)
 	return nil
 }
 
-func describeSourceShort(spec buildapi.CommonSpec) string {
+func describeSourceShort(spec buildv1.CommonSpec) string {
 	var from string
 	switch source := spec.Source; {
 	case source.Binary != nil:
@@ -312,7 +315,7 @@ func describeSourceShort(spec buildapi.CommonSpec) string {
 	return from
 }
 
-func buildSourceType(source buildapi.BuildSource) string {
+func buildSourceType(source buildv1.BuildSource) string {
 	var sourceType string
 	if source.Git != nil {
 		sourceType = "Git"
@@ -334,7 +337,7 @@ func buildSourceType(source buildapi.BuildSource) string {
 
 var nonCommitRev = regexp.MustCompile("[^a-fA-F0-9]")
 
-func describeSourceGitRevision(spec buildapi.CommonSpec) string {
+func describeSourceGitRevision(spec buildv1.CommonSpec) string {
 	var rev string
 	if spec.Revision != nil && spec.Revision.Git != nil {
 		rev = spec.Revision.Git.Commit
@@ -350,7 +353,11 @@ func describeSourceGitRevision(spec buildapi.CommonSpec) string {
 }
 
 func printBuildList(buildList *buildapi.BuildList, w io.Writer, opts kprinters.PrintOptions) error {
-	builds := buildList.Items
+	list := buildv1.BuildList{}
+	if err := legacyscheme.Scheme.Convert(buildList, list, nil); err != nil {
+		return err
+	}
+	builds := list.Items
 	sort.Sort(buildapihelpers.BuildSliceByCreationTimestamp(builds))
 	for _, build := range builds {
 		if err := printBuild(&build, w, opts); err != nil {
@@ -360,7 +367,7 @@ func printBuildList(buildList *buildapi.BuildList, w io.Writer, opts kprinters.P
 	return nil
 }
 
-func printBuildConfig(bc *buildapi.BuildConfig, w io.Writer, opts kprinters.PrintOptions) error {
+func printBuildConfig(bc *buildv1.BuildConfig, w io.Writer, opts kprinters.PrintOptions) error {
 	name := formatResourceName(opts.Kind, bc.Name, opts.WithKind)
 	from := describeSourceShort(bc.Spec.CommonSpec)
 
@@ -411,7 +418,11 @@ func printPolicyRule(policyRules []authorizationapi.PolicyRule, w io.Writer) err
 }
 
 func printBuildConfigList(buildList *buildapi.BuildConfigList, w io.Writer, opts kprinters.PrintOptions) error {
-	for _, buildConfig := range buildList.Items {
+	list := buildv1.BuildConfigList{}
+	if err := legacyscheme.Scheme.Convert(buildList, list, nil); err != nil {
+		return err
+	}
+	for _, buildConfig := range list.Items {
 		if err := printBuildConfig(&buildConfig, w, opts); err != nil {
 			return err
 		}

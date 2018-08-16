@@ -4,21 +4,18 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/golang/glog"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	kapi "k8s.io/kubernetes/pkg/apis/core"
-	kapiv1 "k8s.io/kubernetes/pkg/apis/core/v1"
 	"k8s.io/kubernetes/pkg/credentialprovider"
 	credentialprovidersecrets "k8s.io/kubernetes/pkg/credentialprovider/secrets"
 
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	buildv1 "github.com/openshift/api/build/v1"
+	buildlister "github.com/openshift/client-go/build/listers/build/v1"
 	"github.com/openshift/origin/pkg/build/buildapihelpers"
-	buildlister "github.com/openshift/origin/pkg/build/generated/listers/build/internalversion"
 )
 
 const (
@@ -36,20 +33,19 @@ var (
 	// InputContentPath is the path at which the build inputs will be available
 	// to all the build containers.
 	InputContentPath = filepath.Join(BuildWorkDirMount, "inputs")
-	proxyRegex       = regexp.MustCompile("(?i)proxy")
 )
 
 // IsBuildComplete returns whether the provided build is complete or not
-func IsBuildComplete(build *buildapi.Build) bool {
+func IsBuildComplete(build *buildv1.Build) bool {
 	return IsTerminalPhase(build.Status.Phase)
 }
 
 // IsTerminalPhase returns true if the provided phase is terminal
-func IsTerminalPhase(phase buildapi.BuildPhase) bool {
+func IsTerminalPhase(phase buildv1.BuildPhase) bool {
 	switch phase {
-	case buildapi.BuildPhaseNew,
-		buildapi.BuildPhasePending,
-		buildapi.BuildPhaseRunning:
+	case buildv1.BuildPhaseNew,
+		buildv1.BuildPhasePending,
+		buildv1.BuildPhaseRunning:
 		return false
 	}
 	return true
@@ -64,15 +60,15 @@ func BuildNameForConfigVersion(name string, version int) string {
 // BuildConfigSelector returns a label Selector which can be used to find all
 // builds for a BuildConfig.
 func BuildConfigSelector(name string) labels.Selector {
-	return labels.Set{buildapi.BuildConfigLabel: buildapihelpers.LabelValue(name)}.AsSelector()
+	return labels.Set{BuildConfigLabel: buildapihelpers.LabelValue(name)}.AsSelector()
 }
 
-type buildFilter func(*buildapi.Build) bool
+type buildFilter func(*buildv1.Build) bool
 
 // BuildConfigBuilds return a list of builds for the given build config.
 // Optionally you can specify a filter function to select only builds that
 // matches your criteria.
-func BuildConfigBuilds(c buildlister.BuildLister, namespace, name string, filterFunc buildFilter) ([]*buildapi.Build, error) {
+func BuildConfigBuilds(c buildlister.BuildLister, namespace, name string, filterFunc buildFilter) ([]*buildv1.Build, error) {
 	result, err := c.Builds(namespace).List(BuildConfigSelector(name))
 	if err != nil {
 		return nil, err
@@ -80,7 +76,7 @@ func BuildConfigBuilds(c buildlister.BuildLister, namespace, name string, filter
 	if filterFunc == nil {
 		return result, nil
 	}
-	var filteredList []*buildapi.Build
+	var filteredList []*buildv1.Build
 	for _, b := range result {
 		if filterFunc(b) {
 			filteredList = append(filteredList, b)
@@ -91,39 +87,19 @@ func BuildConfigBuilds(c buildlister.BuildLister, namespace, name string, filter
 
 // ConfigNameForBuild returns the name of the build config from a
 // build name.
-func ConfigNameForBuild(build *buildapi.Build) string {
+func ConfigNameForBuild(build *buildv1.Build) string {
 	if build == nil {
 		return ""
 	}
 	if build.Annotations != nil {
-		if _, exists := build.Annotations[buildapi.BuildConfigAnnotation]; exists {
-			return build.Annotations[buildapi.BuildConfigAnnotation]
+		if _, exists := build.Annotations[BuildConfigAnnotation]; exists {
+			return build.Annotations[BuildConfigAnnotation]
 		}
 	}
-	if _, exists := build.Labels[buildapi.BuildConfigLabel]; exists {
-		return build.Labels[buildapi.BuildConfigLabel]
+	if _, exists := build.Labels[BuildConfigLabel]; exists {
+		return build.Labels[BuildConfigLabel]
 	}
-	return build.Labels[buildapi.BuildConfigLabelDeprecated]
-}
-
-func CopyApiResourcesToV1Resources(in *kapi.ResourceRequirements) corev1.ResourceRequirements {
-	in = in.DeepCopy()
-	out := corev1.ResourceRequirements{}
-	if err := kapiv1.Convert_core_ResourceRequirements_To_v1_ResourceRequirements(in, &out, nil); err != nil {
-		panic(err)
-	}
-	return out
-}
-
-func CopyApiEnvVarToV1EnvVar(in []kapi.EnvVar) []corev1.EnvVar {
-	out := make([]corev1.EnvVar, len(in))
-	for i := range in {
-		item := in[i].DeepCopy()
-		if err := kapiv1.Convert_core_EnvVar_To_v1_EnvVar(item, &out[i], nil); err != nil {
-			panic(err)
-		}
-	}
-	return out
+	return build.Labels[BuildConfigLabelDeprecated]
 }
 
 // MergeTrustedEnvWithoutDuplicates merges two environment lists without having
@@ -132,7 +108,7 @@ func CopyApiEnvVarToV1EnvVar(in []kapi.EnvVar) []corev1.EnvVar {
 // output list.  If sourcePrecedence is true, keys in the source list
 // will override keys in the output list.
 func MergeTrustedEnvWithoutDuplicates(source []corev1.EnvVar, output *[]corev1.EnvVar, sourcePrecedence bool) {
-	MergeEnvWithoutDuplicates(source, output, sourcePrecedence, buildapi.WhitelistEnvVarNames)
+	MergeEnvWithoutDuplicates(source, output, sourcePrecedence, WhitelistEnvVarNames)
 }
 
 // MergeEnvWithoutDuplicates merges two environment lists without having
@@ -149,7 +125,7 @@ func MergeEnvWithoutDuplicates(source []corev1.EnvVar, output *[]corev1.EnvVar, 
 		if len(whitelist) == 0 {
 			allowed = true
 		} else {
-			for _, acceptable := range buildapi.WhitelistEnvVarNames {
+			for _, acceptable := range WhitelistEnvVarNames {
 				if env.Name == acceptable {
 					allowed = true
 					break
@@ -183,7 +159,7 @@ func MergeEnvWithoutDuplicates(source []corev1.EnvVar, output *[]corev1.EnvVar, 
 }
 
 // GetBuildEnv gets the build strategy environment
-func GetBuildEnv(build *buildapi.Build) []kapi.EnvVar {
+func GetBuildEnv(build *buildv1.Build) []corev1.EnvVar {
 	switch {
 	case build.Spec.Strategy.SourceStrategy != nil:
 		return build.Spec.Strategy.SourceStrategy.Env
@@ -199,8 +175,8 @@ func GetBuildEnv(build *buildapi.Build) []kapi.EnvVar {
 }
 
 // SetBuildEnv replaces the current build environment
-func SetBuildEnv(build *buildapi.Build, env []kapi.EnvVar) {
-	var oldEnv *[]kapi.EnvVar
+func SetBuildEnv(build *buildv1.Build, env []corev1.EnvVar) {
+	var oldEnv *[]corev1.EnvVar
 
 	switch {
 	case build.Spec.Strategy.SourceStrategy != nil:
@@ -219,10 +195,10 @@ func SetBuildEnv(build *buildapi.Build, env []kapi.EnvVar) {
 
 // UpdateBuildEnv updates the strategy environment
 // This will replace the existing variable definitions with provided env
-func UpdateBuildEnv(build *buildapi.Build, env []kapi.EnvVar) {
+func UpdateBuildEnv(build *buildv1.Build, env []corev1.EnvVar) {
 	buildEnv := GetBuildEnv(build)
 
-	newEnv := []kapi.EnvVar{}
+	newEnv := []corev1.EnvVar{}
 	for _, e := range buildEnv {
 		exists := false
 		for _, n := range env {
@@ -242,22 +218,17 @@ func UpdateBuildEnv(build *buildapi.Build, env []kapi.EnvVar) {
 // FindDockerSecretAsReference looks through a set of k8s Secrets to find one that represents Docker credentials
 // and which contains credentials that are associated with the registry identified by the image.  It returns
 // a LocalObjectReference to the Secret, or nil if no match was found.
-func FindDockerSecretAsReference(secrets []kapi.Secret, image string) *kapi.LocalObjectReference {
+func FindDockerSecretAsReference(secrets []corev1.Secret, image string) *corev1.LocalObjectReference {
 	emptyKeyring := credentialprovider.BasicDockerKeyring{}
 	for _, secret := range secrets {
-		secretsv1 := make([]corev1.Secret, 1)
-		err := kapiv1.Convert_core_Secret_To_v1_Secret(&secret, &secretsv1[0], nil)
-		if err != nil {
-			glog.V(2).Infof("Unable to make the Docker keyring for %s/%s secret: %v", secret.Name, secret.Namespace, err)
-			continue
-		}
-		keyring, err := credentialprovidersecrets.MakeDockerKeyring(secretsv1, &emptyKeyring)
+		secretList := []corev1.Secret{secret}
+		keyring, err := credentialprovidersecrets.MakeDockerKeyring(secretList, &emptyKeyring)
 		if err != nil {
 			glog.V(2).Infof("Unable to make the Docker keyring for %s/%s secret: %v", secret.Name, secret.Namespace, err)
 			continue
 		}
 		if _, found := keyring.Lookup(image); found {
-			return &kapi.LocalObjectReference{Name: secret.Name}
+			return &corev1.LocalObjectReference{Name: secret.Name}
 		}
 	}
 	return nil

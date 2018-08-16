@@ -7,7 +7,7 @@ import (
 
 	buildv1 "github.com/openshift/api/build/v1"
 	"github.com/openshift/origin/pkg/api/legacy"
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	buildinternalapi "github.com/openshift/origin/pkg/build/apis/build"
 	buildv1helpers "github.com/openshift/origin/pkg/build/apis/build/v1"
 )
 
@@ -33,12 +33,12 @@ func init() {
 	legacy.InstallInternalLegacyBuild(annotationDecodingScheme)
 	utilruntime.Must(buildv1helpers.Install(annotationDecodingScheme))
 	annotationDecoderCodecFactory := serializer.NewCodecFactory(annotationDecodingScheme)
-	Decoder = annotationDecoderCodecFactory.UniversalDecoder(buildapi.SchemeGroupVersion)
+	Decoder = annotationDecoderCodecFactory.UniversalDecoder(buildinternalapi.SchemeGroupVersion)
 
 	// TODO eventually we shouldn't deal in internal versions, but for now encode from one.
 	utilruntime.Must(buildv1helpers.Install(EncoderScheme))
 	annotationEncoderCodecFactory := serializer.NewCodecFactory(EncoderScheme)
-	Encoder = annotationEncoderCodecFactory.LegacyCodec(buildv1.SchemeGroupVersion)
+	Encoder = annotationEncoderCodecFactory.LegacyCodec(buildv1.GroupVersion)
 
 	utilruntime.Must(buildv1helpers.Install(InternalExternalScheme))
 }

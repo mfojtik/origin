@@ -9,11 +9,11 @@ import (
 
 	"github.com/golang/glog"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	kapi "k8s.io/kubernetes/pkg/apis/core"
 
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	buildv1 "github.com/openshift/api/build/v1"
 	"github.com/openshift/origin/pkg/build/buildapihelpers"
 	"github.com/openshift/origin/pkg/build/webhook"
 )
@@ -27,7 +27,7 @@ func New() *WebHookPlugin {
 }
 
 // Extract services generic webhooks.
-func (p *WebHookPlugin) Extract(buildCfg *buildapi.BuildConfig, trigger *buildapi.WebHookTrigger, req *http.Request) (revision *buildapi.SourceRevision, envvars []kapi.EnvVar, dockerStrategyOptions *buildapi.DockerStrategyOptions, proceed bool, err error) {
+func (p *WebHookPlugin) Extract(buildCfg *buildv1.BuildConfig, trigger *buildv1.WebHookTrigger, req *http.Request) (revision *buildv1.SourceRevision, envvars []corev1.EnvVar, dockerStrategyOptions *buildv1.DockerStrategyOptions, proceed bool, err error) {
 	glog.V(4).Infof("Verifying build request for BuildConfig %s/%s", buildCfg.Namespace, buildCfg.Name)
 	if err = verifyRequest(req); err != nil {
 		return revision, envvars, dockerStrategyOptions, false, err
@@ -59,7 +59,7 @@ func (p *WebHookPlugin) Extract(buildCfg *buildapi.BuildConfig, trigger *buildap
 		return revision, envvars, dockerStrategyOptions, true, nil
 	}
 
-	var data buildapi.GenericWebHookEvent
+	var data buildv1.GenericWebHookEvent
 	if contentType == "application/yaml" {
 		body, err = yaml.ToJSON(body)
 		if err != nil {
@@ -86,32 +86,36 @@ func (p *WebHookPlugin) Extract(buildCfg *buildapi.BuildConfig, trigger *buildap
 		return revision, envvars, dockerStrategyOptions, true, warning
 	}
 
-	if data.Git.Refs != nil {
-		for _, ref := range data.Git.Refs {
-			if webhook.GitRefMatches(ref.Ref, webhook.DefaultConfigRef, &buildCfg.Spec.Source) {
-				revision = &buildapi.SourceRevision{
-					Git: &ref.GitSourceRevision,
+	// TODO: The buildv1.GitInfo does not contain the 'Refs' field. This is disabled until that problem is resolved.
+	/*
+		if data.Git.Refs != nil {
+			for _, ref := range data.Git.Refs {
+				if webhook.GitRefMatches(ref.Ref, webhook.DefaultConfigRef, &buildCfg.Spec.Source) {
+					revision = &buildv1.SourceRevision{
+						Git: &ref.GitSourceRevision,
+					}
+					return revision, envvars, dockerStrategyOptions, true, nil
 				}
-				return revision, envvars, dockerStrategyOptions, true, nil
 			}
+			warning := webhook.NewWarning(fmt.Sprintf("skipping build. None of the supplied refs matched %q", buildCfg.Spec.Source.Git.Ref))
+			return revision, envvars, dockerStrategyOptions, false, warning
 		}
-		warning := webhook.NewWarning(fmt.Sprintf("skipping build. None of the supplied refs matched %q", buildCfg.Spec.Source.Git.Ref))
-		return revision, envvars, dockerStrategyOptions, false, warning
-	}
+	*/
+
 	if !webhook.GitRefMatches(data.Git.Ref, webhook.DefaultConfigRef, &buildCfg.Spec.Source) {
 		warning := webhook.NewWarning(fmt.Sprintf("skipping build. Branch reference from %q does not match configuration", data.Git.Ref))
 		return revision, envvars, dockerStrategyOptions, false, warning
 	}
-	revision = &buildapi.SourceRevision{
+	revision = &buildv1.SourceRevision{
 		Git: &data.Git.GitSourceRevision,
 	}
 	return revision, envvars, dockerStrategyOptions, true, nil
 }
 
 // GetTriggers retrieves the WebHookTriggers for this webhook type (if any)
-func (p *WebHookPlugin) GetTriggers(buildConfig *buildapi.BuildConfig) ([]*buildapi.WebHookTrigger, error) {
-	triggers := buildapihelpers.FindTriggerPolicy(buildapi.GenericWebHookBuildTriggerType, buildConfig)
-	webhookTriggers := []*buildapi.WebHookTrigger{}
+func (p *WebHookPlugin) GetTriggers(buildConfig *buildv1.BuildConfig) ([]*buildv1.WebHookTrigger, error) {
+	triggers := buildapihelpers.FindTriggerPolicy(buildv1.GenericWebHookBuildTriggerType, buildConfig)
+	webhookTriggers := []*buildv1.WebHookTrigger{}
 	for _, trigger := range triggers {
 		if trigger.GenericWebHook != nil {
 			webhookTriggers = append(webhookTriggers, trigger.GenericWebHook)

@@ -10,6 +10,7 @@ import (
 	"github.com/golang/glog"
 	lru "github.com/hashicorp/golang-lru"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -18,7 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apiserver/pkg/admission"
-	kapi "k8s.io/kubernetes/pkg/apis/core"
 
 	"github.com/openshift/origin/pkg/api/imagereferencemutators"
 	oadmission "github.com/openshift/origin/pkg/cmd/server/admission"
@@ -79,7 +79,7 @@ type integratedRegistryMatcher struct {
 
 // imageResolver abstracts identifying an image for a particular reference.
 type imageResolver interface {
-	ResolveObjectReference(ref *kapi.ObjectReference, defaultNamespace string, forceResolveLocalNames bool) (*rules.ImagePolicyAttributes, error)
+	ResolveObjectReference(ref *corev1.ObjectReference, defaultNamespace string, forceResolveLocalNames bool) (*rules.ImagePolicyAttributes, error)
 }
 
 // imageResolutionPolicy determines whether an image should be resolved
@@ -269,7 +269,7 @@ type mutationPreventer struct {
 }
 
 func (m *mutationPreventer) Mutate(fn imagereferencemutators.ImageReferenceMutateFunc) field.ErrorList {
-	return m.m.Mutate(func(ref *kapi.ObjectReference) error {
+	return m.m.Mutate(func(ref *corev1.ObjectReference) error {
 		original := ref.DeepCopy()
 		if err := fn(ref); err != nil {
 			return fmt.Errorf("error in image policy validation: %v", err)
@@ -313,7 +313,7 @@ var now = time.Now
 
 // ResolveObjectReference converts a reference into an image API or returns an error. If the kind is not recognized
 // this method will return an error to prevent references that may be images from being ignored.
-func (c *imageResolutionCache) ResolveObjectReference(ref *kapi.ObjectReference, defaultNamespace string, forceResolveLocalNames bool) (*rules.ImagePolicyAttributes, error) {
+func (c *imageResolutionCache) ResolveObjectReference(ref *corev1.ObjectReference, defaultNamespace string, forceResolveLocalNames bool) (*rules.ImagePolicyAttributes, error) {
 	switch ref.Kind {
 	case "ImageStreamTag":
 		ns := ref.Namespace

@@ -11,20 +11,19 @@ import (
 
 	"github.com/golang/glog"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kvalidation "k8s.io/apimachinery/pkg/util/validation"
 	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
-	kapi "k8s.io/kubernetes/pkg/apis/core"
-	kcoreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
+	kubernetestyped "k8s.io/client-go/kubernetes/typed/core/v1"
 
 	buildgroup "github.com/openshift/api/build"
-	buildapiv1 "github.com/openshift/api/build/v1"
+	buildv1 "github.com/openshift/api/build/v1"
+	buildclient "github.com/openshift/client-go/build/clientset/versioned/typed/build/v1"
 	"github.com/openshift/origin/pkg/api/apihelpers"
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/build/buildapihelpers"
-	buildclient "github.com/openshift/origin/pkg/build/generated/internalclientset/typed/build/internalversion"
 	buildutil "github.com/openshift/origin/pkg/build/util"
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
 	imageapi "github.com/openshift/origin/pkg/image/apis/image"
@@ -55,17 +54,17 @@ func IsFatal(err error) bool {
 // from BuildConfigs and other Builds.
 type BuildGenerator struct {
 	Client          GeneratorClient
-	ServiceAccounts kcoreclient.ServiceAccountsGetter
-	Secrets         kcoreclient.SecretsGetter
+	ServiceAccounts kubernetestyped.ServiceAccountsGetter
+	Secrets         kubernetestyped.SecretsGetter
 }
 
 // GeneratorClient is the API client used by the generator
 type GeneratorClient interface {
-	GetBuildConfig(ctx context.Context, name string, options *metav1.GetOptions) (*buildapi.BuildConfig, error)
-	UpdateBuildConfig(ctx context.Context, buildConfig *buildapi.BuildConfig) error
-	GetBuild(ctx context.Context, name string, options *metav1.GetOptions) (*buildapi.Build, error)
-	CreateBuild(ctx context.Context, build *buildapi.Build) error
-	UpdateBuild(ctx context.Context, build *buildapi.Build) error
+	GetBuildConfig(ctx context.Context, name string, options *metav1.GetOptions) (*buildv1.BuildConfig, error)
+	UpdateBuildConfig(ctx context.Context, buildConfig *buildv1.BuildConfig) error
+	GetBuild(ctx context.Context, name string, options *metav1.GetOptions) (*buildv1.Build, error)
+	CreateBuild(ctx context.Context, build *buildv1.Build) error
+	UpdateBuild(ctx context.Context, build *buildv1.Build) error
 	GetImageStream(ctx context.Context, name string, options *metav1.GetOptions) (*imageapi.ImageStream, error)
 	GetImageStreamImage(ctx context.Context, name string, options *metav1.GetOptions) (*imageapi.ImageStreamImage, error)
 	GetImageStreamTag(ctx context.Context, name string, options *metav1.GetOptions) (*imageapi.ImageStreamTag, error)
@@ -81,29 +80,29 @@ type Client struct {
 }
 
 // GetBuildConfig retrieves a named build config
-func (c Client) GetBuildConfig(ctx context.Context, name string, options *metav1.GetOptions) (*buildapi.BuildConfig, error) {
+func (c Client) GetBuildConfig(ctx context.Context, name string, options *metav1.GetOptions) (*buildv1.BuildConfig, error) {
 	return c.BuildConfigs.BuildConfigs(apirequest.NamespaceValue(ctx)).Get(name, *options)
 }
 
 // UpdateBuildConfig updates a named build config
-func (c Client) UpdateBuildConfig(ctx context.Context, buildConfig *buildapi.BuildConfig) error {
+func (c Client) UpdateBuildConfig(ctx context.Context, buildConfig *buildv1.BuildConfig) error {
 	_, err := c.BuildConfigs.BuildConfigs(apirequest.NamespaceValue(ctx)).Update(buildConfig)
 	return err
 }
 
 // GetBuild retrieves a build
-func (c Client) GetBuild(ctx context.Context, name string, options *metav1.GetOptions) (*buildapi.Build, error) {
+func (c Client) GetBuild(ctx context.Context, name string, options *metav1.GetOptions) (*buildv1.Build, error) {
 	return c.Builds.Builds(apirequest.NamespaceValue(ctx)).Get(name, *options)
 }
 
 // CreateBuild creates a new build
-func (c Client) CreateBuild(ctx context.Context, build *buildapi.Build) error {
+func (c Client) CreateBuild(ctx context.Context, build *buildv1.Build) error {
 	_, err := c.Builds.Builds(apirequest.NamespaceValue(ctx)).Create(build)
 	return err
 }
 
 // UpdateBuild updates a build
-func (c Client) UpdateBuild(ctx context.Context, build *buildapi.Build) error {
+func (c Client) UpdateBuild(ctx context.Context, build *buildv1.Build) error {
 	_, err := c.Builds.Builds(apirequest.NamespaceValue(ctx)).Update(build)
 	return err
 }
@@ -125,11 +124,11 @@ func (c Client) GetImageStreamTag(ctx context.Context, name string, options *met
 
 // FetchServiceAccountSecrets retrieves the Secrets used for pushing and pulling
 // images from private Docker registries.
-func FetchServiceAccountSecrets(secrets kcoreclient.SecretsGetter, serviceAccounts kcoreclient.ServiceAccountsGetter, namespace, serviceAccount string) ([]kapi.Secret, error) {
-	var result []kapi.Secret
+func FetchServiceAccountSecrets(secrets kubernetestyped.SecretsGetter, serviceAccounts kubernetestyped.ServiceAccountsGetter, namespace, serviceAccount string) ([]corev1.Secret, error) {
+	var result []corev1.Secret
 	sa, err := serviceAccounts.ServiceAccounts(namespace).Get(serviceAccount, metav1.GetOptions{})
 	if err != nil {
-		return result, fmt.Errorf("Error getting push/pull secrets for service account %s/%s: %v", namespace, serviceAccount, err)
+		return result, fmt.Errorf("error getting push/pull secrets for service account %s/%s: %v", namespace, serviceAccount, err)
 	}
 	for _, ref := range sa.Secrets {
 		secret, err := secrets.Secrets(namespace).Get(ref.Name, metav1.GetOptions{})
@@ -143,12 +142,12 @@ func FetchServiceAccountSecrets(secrets kcoreclient.SecretsGetter, serviceAccoun
 
 // findImageChangeTrigger finds an image change trigger that has a from that matches the passed in ref
 // if no match is found but there is an image change trigger with a null from, that trigger is returned
-func findImageChangeTrigger(bc *buildapi.BuildConfig, ref *kapi.ObjectReference) *buildapi.ImageChangeTrigger {
+func findImageChangeTrigger(bc *buildv1.BuildConfig, ref *corev1.ObjectReference) *buildv1.ImageChangeTrigger {
 	if ref == nil {
 		return nil
 	}
 	for _, trigger := range bc.Spec.Triggers {
-		if trigger.Type != buildapi.ImageChangeBuildTriggerType {
+		if trigger.Type != buildv1.ImageChangeBuildTriggerType {
 			continue
 		}
 		imageChange := trigger.ImageChange
@@ -174,7 +173,7 @@ func findImageChangeTrigger(bc *buildapi.BuildConfig, ref *kapi.ObjectReference)
 	return nil
 }
 
-func describeBuildRequest(request *buildapi.BuildRequest) string {
+func describeBuildRequest(request *buildv1.BuildRequest) string {
 	desc := fmt.Sprintf("BuildConfig: %s/%s", request.Namespace, request.Name)
 	if request.Revision != nil {
 		desc += fmt.Sprintf(", Revision: %#v", request.Revision.Git)
@@ -191,7 +190,7 @@ func describeBuildRequest(request *buildapi.BuildRequest) string {
 }
 
 // Adds new Build Args to existing Build Args. Overwrites existing ones
-func updateBuildArgs(oldArgs *[]kapi.EnvVar, newArgs []kapi.EnvVar) []kapi.EnvVar {
+func updateBuildArgs(oldArgs *[]corev1.EnvVar, newArgs []corev1.EnvVar) []corev1.EnvVar {
 	combined := make(map[string]string)
 
 	// Change oldArgs into a map
@@ -205,17 +204,17 @@ func updateBuildArgs(oldArgs *[]kapi.EnvVar, newArgs []kapi.EnvVar) []kapi.EnvVa
 	}
 
 	// Change back into an array
-	var result []kapi.EnvVar
+	var result []corev1.EnvVar
 	for k, v := range combined {
-		result = append(result, kapi.EnvVar{Name: k, Value: v})
+		result = append(result, corev1.EnvVar{Name: k, Value: v})
 	}
 
 	return result
 }
 
 // Instantiate returns a new Build object based on a BuildRequest object
-func (g *BuildGenerator) Instantiate(ctx context.Context, request *buildapi.BuildRequest) (*buildapi.Build, error) {
-	var build *buildapi.Build
+func (g *BuildGenerator) Instantiate(ctx context.Context, request *buildv1.BuildRequest) (*buildv1.Build, error) {
+	var build *buildv1.Build
 	var err error
 
 	for i := 0; i < conflictRetries; i++ {
@@ -229,7 +228,7 @@ func (g *BuildGenerator) Instantiate(ctx context.Context, request *buildapi.Buil
 	return build, err
 }
 
-func (g *BuildGenerator) instantiate(ctx context.Context, request *buildapi.BuildRequest) (*buildapi.Build, error) {
+func (g *BuildGenerator) instantiate(ctx context.Context, request *buildv1.BuildRequest) (*buildv1.Build, error) {
 	glog.V(4).Infof("Generating Build from %s", describeBuildRequest(request))
 	bc, err := g.Client.GetBuildConfig(ctx, request.Name, &metav1.GetOptions{})
 	if err != nil {
@@ -323,7 +322,7 @@ func (g *BuildGenerator) instantiate(ctx context.Context, request *buildapi.Buil
 
 // checkLastVersion will return an error if the BuildConfig's LastVersion doesn't match the passed in lastVersion
 // when lastVersion is not nil
-func (g *BuildGenerator) checkLastVersion(bc *buildapi.BuildConfig, lastVersion *int64) error {
+func (g *BuildGenerator) checkLastVersion(bc *buildv1.BuildConfig, lastVersion *int64) error {
 	if lastVersion != nil && bc.Status.LastVersion != *lastVersion {
 		glog.V(2).Infof("Aborting version triggered build for BuildConfig %s/%s because the BuildConfig LastVersion (%d) does not match the requested LastVersion (%d)", bc.Namespace, bc.Name, bc.Status.LastVersion, *lastVersion)
 		return fmt.Errorf("the LastVersion(%v) on build config %s/%s does not match the build request LastVersion(%d)",
@@ -334,8 +333,8 @@ func (g *BuildGenerator) checkLastVersion(bc *buildapi.BuildConfig, lastVersion 
 
 // updateImageTriggers sets the LastTriggeredImageID on all the ImageChangeTriggers on the BuildConfig and
 // updates the From reference of the strategy if the strategy uses an ImageStream or ImageStreamTag reference
-func (g *BuildGenerator) updateImageTriggers(ctx context.Context, bc *buildapi.BuildConfig, from, triggeredBy *kapi.ObjectReference) error {
-	var requestTrigger *buildapi.ImageChangeTrigger
+func (g *BuildGenerator) updateImageTriggers(ctx context.Context, bc *buildv1.BuildConfig, from, triggeredBy *corev1.ObjectReference) error {
+	var requestTrigger *buildv1.ImageChangeTrigger
 	if from != nil {
 		requestTrigger = findImageChangeTrigger(bc, from)
 	}
@@ -345,7 +344,7 @@ func (g *BuildGenerator) updateImageTriggers(ctx context.Context, bc *buildapi.B
 	}
 	// Update last triggered image id for all image change triggers
 	for _, trigger := range bc.Spec.Triggers {
-		if trigger.Type != buildapi.ImageChangeBuildTriggerType {
+		if trigger.Type != buildv1.ImageChangeBuildTriggerType {
 			continue
 		}
 		// Use the requested image id for the trigger that caused the build, otherwise resolve to the latest
@@ -377,8 +376,8 @@ func (g *BuildGenerator) updateImageTriggers(ctx context.Context, bc *buildapi.B
 }
 
 // Clone returns clone of a Build
-func (g *BuildGenerator) Clone(ctx context.Context, request *buildapi.BuildRequest) (*buildapi.Build, error) {
-	var build *buildapi.Build
+func (g *BuildGenerator) Clone(ctx context.Context, request *buildv1.BuildRequest) (*buildv1.Build, error) {
+	var build *buildv1.Build
 	var err error
 
 	for i := 0; i < conflictRetries; i++ {
@@ -392,14 +391,14 @@ func (g *BuildGenerator) Clone(ctx context.Context, request *buildapi.BuildReque
 	return build, err
 }
 
-func (g *BuildGenerator) clone(ctx context.Context, request *buildapi.BuildRequest) (*buildapi.Build, error) {
+func (g *BuildGenerator) clone(ctx context.Context, request *buildv1.BuildRequest) (*buildv1.Build, error) {
 	glog.V(4).Infof("Generating build from build %s/%s", request.Namespace, request.Name)
 	build, err := g.Client.GetBuild(ctx, request.Name, &metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	var buildConfig *buildapi.BuildConfig
+	var buildConfig *buildv1.BuildConfig
 	if build.Status.Config != nil {
 		buildConfig, err = g.Client.GetBuildConfig(ctx, build.Status.Config.Name, &metav1.GetOptions{})
 		if err != nil && !errors.IsNotFound(err) {
@@ -443,7 +442,7 @@ func (g *BuildGenerator) clone(ctx context.Context, request *buildapi.BuildReque
 }
 
 // createBuild is responsible for validating build object and saving it and returning newly created object
-func (g *BuildGenerator) createBuild(ctx context.Context, build *buildapi.Build) (*buildapi.Build, error) {
+func (g *BuildGenerator) createBuild(ctx context.Context, build *buildv1.Build) (*buildv1.Build, error) {
 	if !rest.ValidNamespace(ctx, &build.ObjectMeta) {
 		return nil, errors.NewConflict(buildgroup.Resource("build"), build.Namespace, fmt.Errorf("Build.Namespace does not match the provided context"))
 	}
@@ -460,7 +459,7 @@ func (g *BuildGenerator) createBuild(ctx context.Context, build *buildapi.Build)
 // the Strategy, or uses the Image field of the Strategy. If binary is provided, override
 // the current build strategy with a binary artifact for this specific build.
 // Takes a BuildConfig to base the build on, and an optional SourceRevision to build.
-func (g *BuildGenerator) generateBuildFromConfig(ctx context.Context, bc *buildapi.BuildConfig, revision *buildapi.SourceRevision, binary *buildapi.BinaryBuildSource) (*buildapi.Build, error) {
+func (g *BuildGenerator) generateBuildFromConfig(ctx context.Context, bc *buildv1.BuildConfig, revision *buildv1.SourceRevision, binary *buildv1.BinaryBuildSource) (*buildv1.Build, error) {
 
 	// Need to copy the buildConfig here so that it doesn't share pointers with
 	// the build object which could be (will be) modified later.
@@ -471,9 +470,9 @@ func (g *BuildGenerator) generateBuildFromConfig(ctx context.Context, bc *builda
 		serviceAccount = bootstrappolicy.BuilderServiceAccountName
 	}
 	t := true
-	build := &buildapi.Build{
-		Spec: buildapi.BuildSpec{
-			CommonSpec: buildapi.CommonSpec{
+	build := &buildv1.Build{
+		Spec: buildv1.BuildSpec{
+			CommonSpec: buildv1.CommonSpec{
 				ServiceAccount:            serviceAccount,
 				Source:                    bcCopy.Spec.Source,
 				Strategy:                  bcCopy.Spec.Strategy,
@@ -490,17 +489,17 @@ func (g *BuildGenerator) generateBuildFromConfig(ctx context.Context, bc *builda
 			Labels: bcCopy.Labels,
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: buildapiv1.SchemeGroupVersion.String(), // BuildConfig.APIVersion is not populated
-					Kind:       "BuildConfig",                          // BuildConfig.Kind is not populated
+					APIVersion: buildv1.GroupVersion.String(), // BuildConfig.APIVersion is not populated
+					Kind:       "BuildConfig",                 // BuildConfig.Kind is not populated
 					Name:       bcCopy.Name,
 					UID:        bcCopy.UID,
 					Controller: &t,
 				},
 			},
 		},
-		Status: buildapi.BuildStatus{
-			Phase: buildapi.BuildPhaseNew,
-			Config: &kapi.ObjectReference{
+		Status: buildv1.BuildStatus{
+			Phase: buildv1.BuildPhaseNew,
+			Config: &corev1.ObjectReference{
 				Kind:      "BuildConfig",
 				Name:      bcCopy.Name,
 				Namespace: bcCopy.Namespace,
@@ -511,7 +510,7 @@ func (g *BuildGenerator) generateBuildFromConfig(ctx context.Context, bc *builda
 	setBuildSource(binary, build)
 	setBuildAnnotationAndLabel(bcCopy, build)
 
-	var builderSecrets []kapi.Secret
+	var builderSecrets []corev1.Secret
 	var err error
 	if builderSecrets, err = FetchServiceAccountSecrets(g.Secrets, g.ServiceAccounts, bcCopy.Namespace, serviceAccount); err != nil {
 		return nil, err
@@ -529,7 +528,7 @@ func (g *BuildGenerator) generateBuildFromConfig(ctx context.Context, bc *builda
 }
 
 // setBuildSourceImage set BuildSource Image item for new build
-func (g *BuildGenerator) setBuildSourceImage(ctx context.Context, builderSecrets []kapi.Secret, bcCopy *buildapi.BuildConfig, Source *buildapi.BuildSource) error {
+func (g *BuildGenerator) setBuildSourceImage(ctx context.Context, builderSecrets []corev1.Secret, bcCopy *buildv1.BuildConfig, Source *buildv1.BuildSource) error {
 	var err error
 
 	strategyImageChangeTrigger := getStrategyImageChangeTrigger(bcCopy)
@@ -569,7 +568,7 @@ func (g *BuildGenerator) setBuildSourceImage(ctx context.Context, builderSecrets
 }
 
 // setBaseImageAndPullSecretForBuildStrategy sets base image and pullSecret items used in buildStrategy for new builds
-func (g *BuildGenerator) setBaseImageAndPullSecretForBuildStrategy(ctx context.Context, builderSecrets []kapi.Secret, bcCopy *buildapi.BuildConfig, strategy *buildapi.BuildStrategy) error {
+func (g *BuildGenerator) setBaseImageAndPullSecretForBuildStrategy(ctx context.Context, builderSecrets []corev1.Secret, bcCopy *buildv1.BuildConfig, strategy *buildv1.BuildStrategy) error {
 	var err error
 	var image string
 
@@ -587,7 +586,7 @@ func (g *BuildGenerator) setBaseImageAndPullSecretForBuildStrategy(ctx context.C
 				return err
 			}
 		}
-		strategy.SourceStrategy.From = kapi.ObjectReference{
+		strategy.SourceStrategy.From = corev1.ObjectReference{
 			Kind: "DockerImage",
 			Name: image,
 		}
@@ -602,7 +601,7 @@ func (g *BuildGenerator) setBaseImageAndPullSecretForBuildStrategy(ctx context.C
 				return err
 			}
 		}
-		strategy.DockerStrategy.From = &kapi.ObjectReference{
+		strategy.DockerStrategy.From = &corev1.ObjectReference{
 			Kind: "DockerImage",
 			Name: image,
 		}
@@ -616,7 +615,7 @@ func (g *BuildGenerator) setBaseImageAndPullSecretForBuildStrategy(ctx context.C
 				return err
 			}
 		}
-		strategy.CustomStrategy.From = kapi.ObjectReference{
+		strategy.CustomStrategy.From = corev1.ObjectReference{
 			Kind: "DockerImage",
 			Name: image,
 		}
@@ -630,7 +629,7 @@ func (g *BuildGenerator) setBaseImageAndPullSecretForBuildStrategy(ctx context.C
 
 // resolveImageStreamReference looks up the ImageStream[Tag/Image] and converts it to a
 // docker pull spec that can be used in an Image field.
-func (g *BuildGenerator) resolveImageStreamReference(ctx context.Context, from kapi.ObjectReference, defaultNamespace string) (string, error) {
+func (g *BuildGenerator) resolveImageStreamReference(ctx context.Context, from corev1.ObjectReference, defaultNamespace string) (string, error) {
 	var namespace string
 	if len(from.Namespace) != 0 {
 		namespace = from.Namespace
@@ -686,13 +685,13 @@ func (g *BuildGenerator) resolveImageStreamReference(ctx context.Context, from k
 	case "DockerImage":
 		return from.Name, nil
 	default:
-		return "", fmt.Errorf("Unknown From Kind %s", from.Kind)
+		return "", fmt.Errorf("unknown from Kind %s", from.Kind)
 	}
 }
 
 // resolveImageStreamDockerRepository looks up the ImageStream[Tag/Image] and converts it to a
 // the docker repository reference with no tag information
-func (g *BuildGenerator) resolveImageStreamDockerRepository(ctx context.Context, from kapi.ObjectReference, defaultNamespace string) (string, error) {
+func (g *BuildGenerator) resolveImageStreamDockerRepository(ctx context.Context, from corev1.ObjectReference, defaultNamespace string) (string, error) {
 	namespace := defaultNamespace
 	if len(from.Namespace) > 0 {
 		namespace = from.Namespace
@@ -728,13 +727,13 @@ func (g *BuildGenerator) resolveImageStreamDockerRepository(ctx context.Context,
 	case "DockerImage":
 		return from.Name, nil
 	default:
-		return "", fmt.Errorf("Unknown From Kind %s", from.Kind)
+		return "", fmt.Errorf("unknown from Kind %s", from.Kind)
 	}
 }
 
 // resolveImageSecret looks up the Secrets provided by the Service Account and
 // attempt to find a best match for given image.
-func (g *BuildGenerator) resolveImageSecret(ctx context.Context, secrets []kapi.Secret, imageRef *kapi.ObjectReference, buildNamespace string) *kapi.LocalObjectReference {
+func (g *BuildGenerator) resolveImageSecret(ctx context.Context, secrets []corev1.Secret, imageRef *corev1.ObjectReference, buildNamespace string) *corev1.LocalObjectReference {
 	if len(secrets) == 0 || imageRef == nil {
 		return nil
 	}
@@ -770,22 +769,22 @@ func resolveError(kind string, namespace string, name string, err error) error {
 }
 
 // getNextBuildName returns name of the next build and increments BuildConfig's LastVersion.
-func getNextBuildName(buildConfig *buildapi.BuildConfig) string {
+func getNextBuildName(buildConfig *buildv1.BuildConfig) string {
 	buildConfig.Status.LastVersion++
 	return apihelpers.GetName(buildConfig.Name, strconv.FormatInt(buildConfig.Status.LastVersion, 10), kvalidation.DNS1123SubdomainMaxLength)
 }
 
 // UpdateCustomImageEnv updates base image env variable reference with the new image for a custom build strategy.
 // If no env variable reference exists, create a new env variable.
-func UpdateCustomImageEnv(strategy *buildapi.CustomBuildStrategy, newImage string) {
+func UpdateCustomImageEnv(strategy *buildv1.CustomBuildStrategy, newImage string) {
 	if strategy.Env == nil {
-		strategy.Env = make([]kapi.EnvVar, 1)
-		strategy.Env[0] = kapi.EnvVar{Name: buildapi.CustomBuildStrategyBaseImageKey, Value: newImage}
+		strategy.Env = make([]corev1.EnvVar, 1)
+		strategy.Env[0] = corev1.EnvVar{Name: buildutil.CustomBuildStrategyBaseImageKey, Value: newImage}
 	} else {
 		found := false
 		for i := range strategy.Env {
 			glog.V(4).Infof("Checking env variable %s %s", strategy.Env[i].Name, strategy.Env[i].Value)
-			if strategy.Env[i].Name == buildapi.CustomBuildStrategyBaseImageKey {
+			if strategy.Env[i].Name == buildutil.CustomBuildStrategyBaseImageKey {
 				found = true
 				strategy.Env[i].Value = newImage
 				glog.V(4).Infof("Updated env variable %s to %s", strategy.Env[i].Name, strategy.Env[i].Value)
@@ -793,16 +792,16 @@ func UpdateCustomImageEnv(strategy *buildapi.CustomBuildStrategy, newImage strin
 			}
 		}
 		if !found {
-			strategy.Env = append(strategy.Env, kapi.EnvVar{Name: buildapi.CustomBuildStrategyBaseImageKey, Value: newImage})
+			strategy.Env = append(strategy.Env, corev1.EnvVar{Name: buildutil.CustomBuildStrategyBaseImageKey, Value: newImage})
 		}
 	}
 }
 
 // generateBuildFromBuild creates a new build based on a given Build.
-func generateBuildFromBuild(build *buildapi.Build, buildConfig *buildapi.BuildConfig) *buildapi.Build {
+func generateBuildFromBuild(build *buildv1.Build, buildConfig *buildv1.BuildConfig) *buildv1.Build {
 	buildCopy := build.DeepCopy()
 
-	newBuild := &buildapi.Build{
+	newBuild := &buildv1.Build{
 		Spec: buildCopy.Spec,
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            getNextBuildNameFromBuild(buildCopy, buildConfig),
@@ -810,8 +809,8 @@ func generateBuildFromBuild(build *buildapi.Build, buildConfig *buildapi.BuildCo
 			Annotations:     buildCopy.ObjectMeta.Annotations,
 			OwnerReferences: buildCopy.ObjectMeta.OwnerReferences,
 		},
-		Status: buildapi.BuildStatus{
-			Phase:  buildapi.BuildPhaseNew,
+		Status: buildv1.BuildStatus{
+			Phase:  buildv1.BuildPhaseNew,
 			Config: buildCopy.Status.Config,
 		},
 	}
@@ -820,29 +819,29 @@ func generateBuildFromBuild(build *buildapi.Build, buildConfig *buildapi.BuildCo
 	if newBuild.Annotations == nil {
 		newBuild.Annotations = make(map[string]string)
 	}
-	newBuild.Annotations[buildapi.BuildCloneAnnotation] = build.Name
+	newBuild.Annotations[buildutil.BuildCloneAnnotation] = build.Name
 	if buildConfig != nil {
-		newBuild.Annotations[buildapi.BuildNumberAnnotation] = strconv.FormatInt(buildConfig.Status.LastVersion, 10)
+		newBuild.Annotations[buildutil.BuildNumberAnnotation] = strconv.FormatInt(buildConfig.Status.LastVersion, 10)
 	} else {
 		// builds without a buildconfig don't have build numbers.
-		delete(newBuild.Annotations, buildapi.BuildNumberAnnotation)
+		delete(newBuild.Annotations, buildutil.BuildNumberAnnotation)
 	}
 
 	// if they exist, Jenkins reporting annotations must be removed when cloning.
-	delete(newBuild.Annotations, buildapi.BuildJenkinsStatusJSONAnnotation)
-	delete(newBuild.Annotations, buildapi.BuildJenkinsLogURLAnnotation)
-	delete(newBuild.Annotations, buildapi.BuildJenkinsConsoleLogURLAnnotation)
-	delete(newBuild.Annotations, buildapi.BuildJenkinsBlueOceanLogURLAnnotation)
-	delete(newBuild.Annotations, buildapi.BuildJenkinsBuildURIAnnotation)
+	delete(newBuild.Annotations, buildutil.BuildJenkinsStatusJSONAnnotation)
+	delete(newBuild.Annotations, buildutil.BuildJenkinsLogURLAnnotation)
+	delete(newBuild.Annotations, buildutil.BuildJenkinsConsoleLogURLAnnotation)
+	delete(newBuild.Annotations, buildutil.BuildJenkinsBlueOceanLogURLAnnotation)
+	delete(newBuild.Annotations, buildutil.BuildJenkinsBuildURIAnnotation)
 
 	// remove the BuildPodNameAnnotation for good measure.
-	delete(newBuild.Annotations, buildapi.BuildPodNameAnnotation)
+	delete(newBuild.Annotations, buildutil.BuildPodNameAnnotation)
 
 	return newBuild
 }
 
 // getNextBuildNameFromBuild returns name of the next build with random uuid added at the end
-func getNextBuildNameFromBuild(build *buildapi.Build, buildConfig *buildapi.BuildConfig) string {
+func getNextBuildNameFromBuild(build *buildv1.Build, buildConfig *buildv1.BuildConfig) string {
 	var buildName string
 	if buildConfig != nil {
 		return getNextBuildName(buildConfig)
@@ -864,9 +863,9 @@ func getNextBuildNameFromBuild(build *buildapi.Build, buildConfig *buildapi.Buil
 }
 
 // getStrategyImageChangeTrigger returns the ImageChangeTrigger that corresponds to the BuildConfig's strategy
-func getStrategyImageChangeTrigger(bc *buildapi.BuildConfig) *buildapi.ImageChangeTrigger {
+func getStrategyImageChangeTrigger(bc *buildv1.BuildConfig) *buildv1.ImageChangeTrigger {
 	for _, trigger := range bc.Spec.Triggers {
-		if trigger.Type == buildapi.ImageChangeBuildTriggerType && trigger.ImageChange.From == nil {
+		if trigger.Type == buildv1.ImageChangeBuildTriggerType && trigger.ImageChange.From == nil {
 			return trigger.ImageChange
 		}
 	}
@@ -875,12 +874,12 @@ func getStrategyImageChangeTrigger(bc *buildapi.BuildConfig) *buildapi.ImageChan
 
 // getImageChangeTriggerForRef returns the ImageChangeTrigger that is triggered by a change to
 // the provided object reference, if any
-func getImageChangeTriggerForRef(bc *buildapi.BuildConfig, ref *kapi.ObjectReference) *buildapi.ImageChangeTrigger {
+func getImageChangeTriggerForRef(bc *buildv1.BuildConfig, ref *corev1.ObjectReference) *buildv1.ImageChangeTrigger {
 	if ref == nil || ref.Kind != "ImageStreamTag" {
 		return nil
 	}
 	for _, trigger := range bc.Spec.Triggers {
-		if trigger.Type == buildapi.ImageChangeBuildTriggerType && trigger.ImageChange.From != nil &&
+		if trigger.Type == buildv1.ImageChangeBuildTriggerType && trigger.ImageChange.From != nil &&
 			trigger.ImageChange.From.Name == ref.Name && trigger.ImageChange.From.Namespace == ref.Namespace {
 			return trigger.ImageChange
 		}
@@ -888,8 +887,8 @@ func getImageChangeTriggerForRef(bc *buildapi.BuildConfig, ref *kapi.ObjectRefer
 	return nil
 }
 
-//setBuildSource update build source by binary status
-func setBuildSource(binary *buildapi.BinaryBuildSource, build *buildapi.Build) {
+// setBuildSource update build source by binary status
+func setBuildSource(binary *buildv1.BinaryBuildSource, build *buildv1.Build) {
 	if binary != nil {
 		build.Spec.Source.Git = nil
 		build.Spec.Source.Binary = binary
@@ -902,20 +901,20 @@ func setBuildSource(binary *buildapi.BinaryBuildSource, build *buildapi.Build) {
 	}
 }
 
-//setBuildAnnotationAndLabel set annotations and label info of this build
-func setBuildAnnotationAndLabel(bcCopy *buildapi.BuildConfig, build *buildapi.Build) {
+// setBuildAnnotationAndLabel set annotations and label info of this build
+func setBuildAnnotationAndLabel(bcCopy *buildv1.BuildConfig, build *buildv1.Build) {
 	if build.Annotations == nil {
 		build.Annotations = make(map[string]string)
 	}
-	//bcCopy.Status.LastVersion has been increased
-	build.Annotations[buildapi.BuildNumberAnnotation] = strconv.FormatInt(bcCopy.Status.LastVersion, 10)
-	build.Annotations[buildapi.BuildConfigAnnotation] = bcCopy.Name
+	// bcCopy.Status.LastVersion has been increased
+	build.Annotations[buildutil.BuildNumberAnnotation] = strconv.FormatInt(bcCopy.Status.LastVersion, 10)
+	build.Annotations[buildutil.BuildConfigAnnotation] = bcCopy.Name
 	if build.Labels == nil {
 		build.Labels = make(map[string]string)
 	}
-	build.Labels[buildapi.BuildConfigLabelDeprecated] = buildapihelpers.LabelValue(bcCopy.Name)
-	build.Labels[buildapi.BuildConfigLabel] = buildapihelpers.LabelValue(bcCopy.Name)
-	build.Labels[buildapi.BuildRunPolicyLabel] = string(bcCopy.Spec.RunPolicy)
+	build.Labels[buildutil.BuildConfigLabelDeprecated] = buildapihelpers.LabelValue(bcCopy.Name)
+	build.Labels[buildutil.BuildConfigLabel] = buildapihelpers.LabelValue(bcCopy.Name)
+	build.Labels[buildutil.BuildRunPolicyLabel] = string(bcCopy.Spec.RunPolicy)
 }
 
 // mergeMaps will merge to map[string]string instances, with
@@ -940,6 +939,6 @@ func mergeMaps(a, b map[string]string) map[string]string {
 }
 
 // isPaused returns true if the provided BuildConfig is paused and cannot be used to create a new Build
-func isPaused(bc *buildapi.BuildConfig) bool {
-	return strings.ToLower(bc.Annotations[buildapi.BuildConfigPausedAnnotation]) == "true"
+func isPaused(bc *buildv1.BuildConfig) bool {
+	return strings.ToLower(bc.Annotations[buildutil.BuildConfigPausedAnnotation]) == "true"
 }

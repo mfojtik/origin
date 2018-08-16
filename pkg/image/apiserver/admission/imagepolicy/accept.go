@@ -5,11 +5,11 @@ import (
 
 	"github.com/golang/glog"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apiserver/pkg/admission"
-	kapi "k8s.io/kubernetes/pkg/apis/core"
 
 	"github.com/openshift/origin/pkg/api/imagereferencemutators"
 	imageapi "github.com/openshift/origin/pkg/image/apis/image"
@@ -19,7 +19,7 @@ import (
 
 var errRejectByPolicy = fmt.Errorf("this image is prohibited by policy")
 
-type policyDecisions map[kapi.ObjectReference]policyDecision
+type policyDecisions map[corev1.ObjectReference]policyDecision
 
 type policyDecision struct {
 	attrs         *rules.ImagePolicyAttributes
@@ -42,7 +42,7 @@ func accept(accepter rules.Accepter, policy imageResolutionPolicy, resolver imag
 		}
 	}
 
-	errs := m.Mutate(func(ref *kapi.ObjectReference) error {
+	errs := m.Mutate(func(ref *corev1.ObjectReference) error {
 		// create the attribute set for this particular reference, if we have never seen the reference
 		// before
 		decision, ok := decisions[*ref]
