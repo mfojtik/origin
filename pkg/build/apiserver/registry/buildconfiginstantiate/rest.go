@@ -15,18 +15,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apiserver/pkg/registry/rest"
+	kcoreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	kapi "k8s.io/kubernetes/pkg/apis/core"
-	kcoreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 
-	buildapiv1 "github.com/openshift/api/build/v1"
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	buildapi "github.com/openshift/api/build/v1"
+	buildtypedclient "github.com/openshift/client-go/build/clientset/versioned/typed/build/v1"
 	buildwait "github.com/openshift/origin/pkg/build/apiserver/registry/wait"
 	"github.com/openshift/origin/pkg/build/buildapihelpers"
 	buildstrategy "github.com/openshift/origin/pkg/build/controller/strategy"
-	buildtypedclient "github.com/openshift/origin/pkg/build/generated/internalclientset/typed/build/internalversion"
 	"github.com/openshift/origin/pkg/build/generator"
 	buildutil "github.com/openshift/origin/pkg/build/util"
 )
@@ -69,7 +68,7 @@ func (s *InstantiateREST) Create(ctx context.Context, obj runtime.Object, create
 		buildTriggerCauses := []buildapi.BuildTriggerCause{}
 		request.TriggeredBy = append(buildTriggerCauses,
 			buildapi.BuildTriggerCause{
-				Message: buildapi.BuildTriggerCauseManualMsg,
+				Message: buildutil.BuildTriggerCauseManualMsg,
 			},
 		)
 	}
@@ -78,7 +77,7 @@ func (s *InstantiateREST) Create(ctx context.Context, obj runtime.Object, create
 
 func (s *InstantiateREST) ProducesObject(verb string) interface{} {
 	// for documentation purposes
-	return buildapiv1.Build{}
+	return buildapi.Build{}
 }
 
 func (s *InstantiateREST) ProducesMIMETypes(verb string) []string {
@@ -139,7 +138,7 @@ func (r *BinaryInstantiateREST) ConnectMethods() []string {
 
 func (r *BinaryInstantiateREST) ProducesObject(verb string) interface{} {
 	// for documentation purposes
-	return buildapiv1.Build{}
+	return buildapi.Build{}
 }
 
 func (r *BinaryInstantiateREST) ProducesMIMETypes(verb string) []string {

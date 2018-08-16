@@ -7,12 +7,13 @@ import (
 
 	"github.com/golang/glog"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/admission"
-	restclient "k8s.io/client-go/rest"
-	api "k8s.io/kubernetes/pkg/apis/core"
+	"k8s.io/client-go/rest"
 
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	buildv1 "github.com/openshift/api/build/v1"
+	buildutil "github.com/openshift/origin/pkg/build/util"
 	authclient "github.com/openshift/origin/pkg/client/impersonatingclient"
 	oadmission "github.com/openshift/origin/pkg/cmd/server/admission"
 	"github.com/openshift/origin/pkg/util/urlpattern"
@@ -29,13 +30,13 @@ func Register(plugins *admission.Plugins) {
 
 type secretInjector struct {
 	*admission.Handler
-	restClientConfig restclient.Config
+	restClientConfig rest.Config
 }
 
 var _ = oadmission.WantsRESTClientConfig(&secretInjector{})
 
 func (si *secretInjector) Admit(attr admission.Attributes) (err error) {
-	bc, ok := attr.GetObject().(*buildapi.BuildConfig)
+	bc, ok := attr.GetObject().(*buildv1.BuildConfig)
 	if !ok {
 		return nil
 	}
@@ -66,13 +67,14 @@ func (si *secretInjector) Admit(attr admission.Attributes) (err error) {
 
 	patterns := []*urlpattern.URLPattern{}
 	for _, secret := range secrets.Items {
-		if secret.Type == api.SecretTypeBasicAuth && url.Scheme == "ssh" ||
-			secret.Type == api.SecretTypeSSHAuth && url.Scheme != "ssh" {
+		// TODO: Replace these with corev1 secret types once we switch the impersonatingclient to external
+		if secret.Type == "kubernetes.io/basic-auth" && url.Scheme == "ssh" ||
+			secret.Type == "kubernetes.io/ssh-auth" && url.Scheme != "ssh" {
 			continue
 		}
 
 		for k, v := range secret.GetAnnotations() {
-			if strings.HasPrefix(k, buildapi.BuildSourceSecretMatchURIAnnotationPrefix) {
+			if strings.HasPrefix(k, buildutil.BuildSourceSecretMatchURIAnnotationPrefix) {
 				v = strings.TrimSpace(v)
 				if v == "" {
 					continue
@@ -93,13 +95,13 @@ func (si *secretInjector) Admit(attr admission.Attributes) (err error) {
 	if match := urlpattern.Match(patterns, url); match != nil {
 		secretName := match.Cookie.(string)
 		glog.V(4).Infof(`secretinjector: matched secret "%s/%s" to buildconfig "%s"`, namespace, secretName, bc.GetName())
-		bc.Spec.Source.SourceSecret = &api.LocalObjectReference{Name: secretName}
+		bc.Spec.Source.SourceSecret = &corev1.LocalObjectReference{Name: secretName}
 	}
 
 	return nil
 }
 
-func (si *secretInjector) SetRESTClientConfig(restClientConfig restclient.Config) {
+func (si *secretInjector) SetRESTClientConfig(restClientConfig rest.Config) {
 	si.restClientConfig = restClientConfig
 }
 

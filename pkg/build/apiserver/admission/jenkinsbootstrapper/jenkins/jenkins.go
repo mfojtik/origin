@@ -4,12 +4,10 @@ import (
 	"fmt"
 
 	"github.com/golang/glog"
-
 	kerrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
-	kapi "k8s.io/kubernetes/pkg/apis/core"
 
 	templatev1 "github.com/openshift/api/template/v1"
 	templateclient "github.com/openshift/client-go/template/clientset/versioned"
@@ -69,7 +67,7 @@ func (t *PipelineTemplate) HasJenkinsService(items *unstructured.UnstructuredLis
 	for _, item := range items.Items {
 		glog.Infof("Jenkins Pipeline template object %q with name %q", item.GetName(), item.GetObjectKind().GroupVersionKind())
 
-		if item.GetName() == t.Config.ServiceName && item.GetObjectKind().GroupVersionKind().GroupKind() == kapi.Kind("Service") {
+		if item.GetName() == t.Config.ServiceName && item.GetObjectKind().GroupVersionKind().GroupKind().Kind == "Service" {
 			return true
 		}
 	}

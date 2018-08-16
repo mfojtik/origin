@@ -10,6 +10,7 @@ import (
 	"k8s.io/apiserver/pkg/storage/names"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 
+	buildv1 "github.com/openshift/api/build/v1"
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/build/apis/build/validation"
 	buildutil "github.com/openshift/origin/pkg/build/util"
@@ -97,7 +98,11 @@ func (detailsStrategy) PrepareForUpdate(ctx context.Context, obj, old runtime.Ob
 	// a completed phase.
 	phase := oldBuild.Status.Phase
 	stages := newBuild.Status.Stages
-	if buildutil.IsBuildComplete(newBuild) {
+	externalBuild := &buildv1.Build{}
+	if err := legacyscheme.Scheme.Convert(newBuild, externalBuild, nil); err != nil {
+		panic(err)
+	}
+	if buildutil.IsBuildComplete(externalBuild) {
 		phase = newBuild.Status.Phase
 	}
 	revision := newBuild.Spec.Revision

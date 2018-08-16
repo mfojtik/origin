@@ -16,15 +16,15 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
+	kcoreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	kapi "k8s.io/kubernetes/pkg/apis/core"
-	kcoreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 
 	"github.com/openshift/api/build"
+	buildapi "github.com/openshift/api/build/v1"
+	buildclient "github.com/openshift/client-go/build/clientset/versioned/typed/build/v1"
 	"github.com/openshift/origin/pkg/api/legacy"
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	buildv1helpers "github.com/openshift/origin/pkg/build/apis/build/v1"
 	"github.com/openshift/origin/pkg/build/client"
-	buildclient "github.com/openshift/origin/pkg/build/generated/internalclientset/typed/build/internalversion"
 	"github.com/openshift/origin/pkg/build/webhook"
 )
 
@@ -43,19 +43,20 @@ func init() {
 
 type WebHook struct {
 	groupVersion      schema.GroupVersion
-	buildConfigClient buildclient.BuildInterface
+	buildConfigClient buildclient.BuildV1Interface
 	secretsClient     kcoreclient.SecretsGetter
 	instantiator      client.BuildConfigInstantiator
 	plugins           map[string]webhook.Plugin
 }
 
 // NewWebHookREST returns the webhook handler
-func NewWebHookREST(buildConfigClient buildclient.BuildInterface, secretsClient kcoreclient.SecretsGetter, groupVersion schema.GroupVersion, plugins map[string]webhook.Plugin) *WebHook {
+func NewWebHookREST(buildConfigClient buildclient.BuildV1Interface, secretsClient kcoreclient.SecretsGetter, groupVersion schema.GroupVersion, plugins map[string]webhook.Plugin) *WebHook {
 	return newWebHookREST(buildConfigClient, secretsClient, client.BuildConfigInstantiatorClient{Client: buildConfigClient}, groupVersion, plugins)
 }
 
 // this supports simple unit testing
-func newWebHookREST(buildConfigClient buildclient.BuildInterface, secretsClient kcoreclient.SecretsGetter, instantiator client.BuildConfigInstantiator, groupVersion schema.GroupVersion, plugins map[string]webhook.Plugin) *WebHook {
+func newWebHookREST(buildConfigClient buildclient.BuildV1Interface, secretsClient kcoreclient.SecretsGetter,
+	instantiator client.BuildConfigInstantiator, groupVersion schema.GroupVersion, plugins map[string]webhook.Plugin) *WebHook {
 	return &WebHook{
 		groupVersion:      groupVersion,
 		buildConfigClient: buildConfigClient,
@@ -103,7 +104,7 @@ type WebHookHandler struct {
 	responder         rest.Responder
 	groupVersion      schema.GroupVersion
 	plugins           map[string]webhook.Plugin
-	buildConfigClient buildclient.BuildInterface
+	buildConfigClient buildclient.BuildV1Interface
 	secretsClient     kcoreclient.SecretsGetter
 	instantiator      client.BuildConfigInstantiator
 }

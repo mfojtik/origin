@@ -12,15 +12,15 @@ import (
 	kutilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/client-go/dynamic"
-	restclient "k8s.io/client-go/rest"
-	kclientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-	coreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
+	"k8s.io/client-go/rest"
+	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
+	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 	kadmission "k8s.io/kubernetes/pkg/kubeapiserver/admission"
 
 	"github.com/openshift/api/build"
+	buildv1 "github.com/openshift/api/build/v1"
 	templateclient "github.com/openshift/client-go/template/clientset/versioned"
 	"github.com/openshift/origin/pkg/api/legacy"
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	jenkinscontroller "github.com/openshift/origin/pkg/build/apiserver/admission/jenkinsbootstrapper/jenkins"
 	authenticationclient "github.com/openshift/origin/pkg/client/impersonatingclient"
 	oadmission "github.com/openshift/origin/pkg/cmd/server/admission"
@@ -37,8 +37,8 @@ func Register(plugins *admission.Plugins) {
 type jenkinsBootstrapper struct {
 	*admission.Handler
 
-	privilegedRESTClientConfig restclient.Config
-	serviceClient              coreclient.ServicesGetter
+	privilegedRESTClientConfig rest.Config
+	serviceClient              internalversion.ServicesGetter
 	templateClient             templateclient.Interface
 	dynamicClient              dynamic.Interface
 	restMapper                 meta.RESTMapper
@@ -130,9 +130,9 @@ func (a *jenkinsBootstrapper) Admit(attributes admission.Attributes) error {
 
 func needsJenkinsTemplate(obj runtime.Object) bool {
 	switch t := obj.(type) {
-	case *buildapi.Build:
+	case *buildv1.Build:
 		return t.Spec.Strategy.JenkinsPipelineStrategy != nil
-	case *buildapi.BuildConfig:
+	case *buildv1.BuildConfig:
 		return t.Spec.Strategy.JenkinsPipelineStrategy != nil
 	default:
 		return false
@@ -143,11 +143,11 @@ func (a *jenkinsBootstrapper) SetJenkinsPipelineConfig(jenkinsConfig configapi.J
 	a.jenkinsConfig = jenkinsConfig
 }
 
-func (a *jenkinsBootstrapper) SetRESTClientConfig(restClientConfig restclient.Config) {
+func (a *jenkinsBootstrapper) SetRESTClientConfig(restClientConfig rest.Config) {
 	a.privilegedRESTClientConfig = restClientConfig
 }
 
-func (q *jenkinsBootstrapper) SetInternalKubeClientSet(c kclientset.Interface) {
+func (q *jenkinsBootstrapper) SetInternalKubeClientSet(c internalclientset.Interface) {
 	q.serviceClient = c.Core()
 }
 

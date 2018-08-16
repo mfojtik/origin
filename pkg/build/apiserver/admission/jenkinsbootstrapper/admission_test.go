@@ -13,9 +13,9 @@ import (
 	kapi "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
 
+	buildapi "github.com/openshift/api/build/v1"
 	templatefake "github.com/openshift/client-go/template/clientset/versioned/fake"
 	"github.com/openshift/origin/pkg/api/legacy"
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 )
 

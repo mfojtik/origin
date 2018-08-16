@@ -8,17 +8,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apiserver/pkg/registry/rest"
 	genericapiserver "k8s.io/apiserver/pkg/server"
+	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
-	kclientsetinternal "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 
 	buildapiv1 "github.com/openshift/api/build/v1"
+	buildclientset "github.com/openshift/client-go/build/clientset/versioned"
 	buildetcd "github.com/openshift/origin/pkg/build/apiserver/registry/build/etcd"
 	"github.com/openshift/origin/pkg/build/apiserver/registry/buildclone"
 	buildconfigregistry "github.com/openshift/origin/pkg/build/apiserver/registry/buildconfig"
 	buildconfigetcd "github.com/openshift/origin/pkg/build/apiserver/registry/buildconfig/etcd"
 	"github.com/openshift/origin/pkg/build/apiserver/registry/buildconfiginstantiate"
 	buildlogregistry "github.com/openshift/origin/pkg/build/apiserver/registry/buildlog"
-	buildclientset "github.com/openshift/origin/pkg/build/generated/internalclientset"
 	buildgenerator "github.com/openshift/origin/pkg/build/generator"
 	"github.com/openshift/origin/pkg/build/webhook"
 	"github.com/openshift/origin/pkg/build/webhook/bitbucket"
@@ -105,7 +105,7 @@ func (c *completedConfig) V1RESTStorage() (map[string]rest.Storage, error) {
 }
 
 func (c *completedConfig) newV1RESTStorage() (map[string]rest.Storage, error) {
-	kubeInternalClient, err := kclientsetinternal.NewForConfig(c.ExtraConfig.KubeAPIServerClientConfig)
+	kubeInternalClient, err := kubernetes.NewForConfig(c.ExtraConfig.KubeAPIServerClientConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (c *completedConfig) newV1RESTStorage() (map[string]rest.Storage, error) {
 		Secrets:         kubeInternalClient.Core(),
 	}
 	buildConfigWebHooks := buildconfigregistry.NewWebHookREST(
-		buildClient.Build(),
+		buildClient.BuildV1(),
 		kubeInternalClient.Core(),
 		// We use the buildapiv1 schemegroup to encode the Build that gets
 		// returned. As such, we need to make sure that the GroupVersion we use

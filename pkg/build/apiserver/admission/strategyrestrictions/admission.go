@@ -17,10 +17,10 @@ import (
 	rbacregistry "k8s.io/kubernetes/pkg/registry/rbac"
 
 	"github.com/openshift/api/build"
+	buildv1 "github.com/openshift/api/build/v1"
 	buildclient "github.com/openshift/client-go/build/clientset/versioned"
 	"github.com/openshift/origin/pkg/api/legacy"
 	"github.com/openshift/origin/pkg/authorization/util"
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/build/buildscheme"
 	oadmission "github.com/openshift/origin/pkg/cmd/server/admission"
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
@@ -75,11 +75,11 @@ func (a *buildByStrategy) Admit(attr admission.Attributes) error {
 	}
 
 	switch obj := attr.GetObject().(type) {
-	case *buildapi.Build:
+	case *buildv1.Build:
 		return a.checkBuildAuthorization(obj, attr)
-	case *buildapi.BuildConfig:
+	case *buildv1.BuildConfig:
 		return a.checkBuildConfigAuthorization(obj, attr)
-	case *buildapi.BuildRequest:
+	case *buildv1.BuildRequest:
 		return a.checkBuildRequestAuthorization(obj, attr)
 	default:
 		return admission.NewForbidden(attr, fmt.Errorf("unrecognized request object %#v", obj))
@@ -109,9 +109,9 @@ func (a *buildByStrategy) ValidateInitialization() error {
 	return nil
 }
 
-func resourceForStrategyType(strategy buildapi.BuildStrategy) (schema.GroupResource, error) {
+func resourceForStrategyType(strategy buildv1.BuildStrategy) (schema.GroupResource, error) {
 	switch {
-	case strategy.DockerStrategy != nil && strategy.DockerStrategy.ImageOptimizationPolicy != nil && *strategy.DockerStrategy.ImageOptimizationPolicy != buildapi.ImageOptimizationNone:
+	case strategy.DockerStrategy != nil && strategy.DockerStrategy.ImageOptimizationPolicy != nil && *strategy.DockerStrategy.ImageOptimizationPolicy != buildv1.ImageOptimizationNone:
 		return build.Resource(bootstrappolicy.OptimizedDockerBuildResource), nil
 	case strategy.DockerStrategy != nil:
 		return build.Resource(bootstrappolicy.DockerBuildResource), nil
@@ -133,7 +133,7 @@ func resourceName(objectMeta metav1.ObjectMeta) string {
 	return objectMeta.Name
 }
 
-func (a *buildByStrategy) checkBuildAuthorization(build *buildapi.Build, attr admission.Attributes) error {
+func (a *buildByStrategy) checkBuildAuthorization(build *buildv1.Build, attr admission.Attributes) error {
 	strategy := build.Spec.Strategy
 	resource, err := resourceForStrategyType(strategy)
 	if err != nil {
@@ -161,7 +161,7 @@ func (a *buildByStrategy) checkBuildAuthorization(build *buildapi.Build, attr ad
 	return a.checkAccess(strategy, sar, attr)
 }
 
-func (a *buildByStrategy) checkBuildConfigAuthorization(buildConfig *buildapi.BuildConfig, attr admission.Attributes) error {
+func (a *buildByStrategy) checkBuildConfigAuthorization(buildConfig *buildv1.BuildConfig, attr admission.Attributes) error {
 	strategy := buildConfig.Spec.Strategy
 	resource, err := resourceForStrategyType(strategy)
 	if err != nil {
@@ -189,7 +189,7 @@ func (a *buildByStrategy) checkBuildConfigAuthorization(buildConfig *buildapi.Bu
 	return a.checkAccess(strategy, sar, attr)
 }
 
-func (a *buildByStrategy) checkBuildRequestAuthorization(req *buildapi.BuildRequest, attr admission.Attributes) error {
+func (a *buildByStrategy) checkBuildRequestAuthorization(req *buildv1.BuildRequest, attr admission.Attributes) error {
 	gr := attr.GetResource().GroupResource()
 	switch gr {
 	case build.Resource("builds"),
@@ -198,7 +198,7 @@ func (a *buildByStrategy) checkBuildRequestAuthorization(req *buildapi.BuildRequ
 		if err != nil {
 			return admission.NewForbidden(attr, err)
 		}
-		internalBuild := &buildapi.Build{}
+		internalBuild := &buildv1.Build{}
 		if err := buildscheme.InternalExternalScheme.Convert(build, internalBuild, nil); err != nil {
 			return admission.NewForbidden(attr, err)
 		}
@@ -210,7 +210,7 @@ func (a *buildByStrategy) checkBuildRequestAuthorization(req *buildapi.BuildRequ
 		if err != nil {
 			return admission.NewForbidden(attr, err)
 		}
-		internalBuildConfig := &buildapi.BuildConfig{}
+		internalBuildConfig := &buildv1.BuildConfig{}
 		if err := buildscheme.InternalExternalScheme.Convert(buildConfig, internalBuildConfig, nil); err != nil {
 			return admission.NewForbidden(attr, err)
 		}
@@ -220,7 +220,7 @@ func (a *buildByStrategy) checkBuildRequestAuthorization(req *buildapi.BuildRequ
 	}
 }
 
-func (a *buildByStrategy) checkAccess(strategy buildapi.BuildStrategy, subjectAccessReview *authorizationv1.SubjectAccessReview, attr admission.Attributes) error {
+func (a *buildByStrategy) checkAccess(strategy buildv1.BuildStrategy, subjectAccessReview *authorizationv1.SubjectAccessReview, attr admission.Attributes) error {
 	resp, err := a.sarClient.Create(subjectAccessReview)
 	if err != nil {
 		return admission.NewForbidden(attr, err)
@@ -231,11 +231,11 @@ func (a *buildByStrategy) checkAccess(strategy buildapi.BuildStrategy, subjectAc
 	return nil
 }
 
-func notAllowed(strategy buildapi.BuildStrategy, attr admission.Attributes) error {
+func notAllowed(strategy buildv1.BuildStrategy, attr admission.Attributes) error {
 	return admission.NewForbidden(attr, fmt.Errorf("build strategy %s is not allowed", strategyTypeString(strategy)))
 }
 
-func strategyTypeString(strategy buildapi.BuildStrategy) string {
+func strategyTypeString(strategy buildv1.BuildStrategy) string {
 	switch {
 	case strategy.DockerStrategy != nil:
 		return "Docker"

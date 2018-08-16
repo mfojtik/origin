@@ -8,9 +8,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	apiserverrest "k8s.io/apiserver/pkg/registry/rest"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
+	"k8s.io/client-go/kubernetes/fake"
 
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	buildapi "github.com/openshift/api/build/v1"
 	_ "github.com/openshift/origin/pkg/build/apis/build/install"
 	"github.com/openshift/origin/pkg/build/generator"
 	mocks "github.com/openshift/origin/pkg/build/generator/test"

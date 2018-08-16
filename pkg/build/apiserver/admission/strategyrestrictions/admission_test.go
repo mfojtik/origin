@@ -14,9 +14,9 @@ import (
 	fakekubeclient "k8s.io/client-go/kubernetes/fake"
 	clientgotesting "k8s.io/client-go/testing"
 
+	buildapi "github.com/openshift/api/build/v1"
 	buildapiv1 "github.com/openshift/api/build/v1"
 	fakebuildclient "github.com/openshift/client-go/build/clientset/versioned/fake"
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 
 	"github.com/openshift/api/build"
 	_ "github.com/openshift/origin/pkg/build/apis/build/install"

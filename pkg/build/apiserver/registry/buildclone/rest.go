@@ -5,7 +5,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/registry/rest"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 
+	buildv1 "github.com/openshift/api/build/v1"
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/build/generator"
 )
@@ -36,6 +38,18 @@ func (s *CloneREST) Create(ctx context.Context, obj runtime.Object, createValida
 	if err := createValidation(obj); err != nil {
 		return nil, err
 	}
+	internalRequest := obj.(*buildapi.BuildRequest)
+	externalRequest := &buildv1.BuildRequest{}
 
-	return s.generator.Clone(ctx, obj.(*buildapi.BuildRequest))
+	if err := legacyscheme.Scheme.Convert(internalRequest, externalRequest, nil); err != nil {
+		return nil, err
+	}
+	externalClone, err := s.generator.Clone(ctx, externalRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &buildapi.BuildRequest{}
+	err = legacyscheme.Scheme.Convert(externalClone, result, nil)
+	return result, err
 }

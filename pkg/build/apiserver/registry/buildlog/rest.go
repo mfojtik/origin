@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/golang/glog"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -15,19 +17,18 @@ import (
 	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	genericrest "k8s.io/apiserver/pkg/registry/generic/rest"
 	"k8s.io/apiserver/pkg/registry/rest"
-	kapi "k8s.io/kubernetes/pkg/apis/core"
-	kcoreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
-
-	"strconv"
+	kcoreclient "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 
 	"github.com/openshift/api/build"
+	buildv1 "github.com/openshift/api/build/v1"
+	buildtypedclient "github.com/openshift/client-go/build/clientset/versioned/typed/build/v1"
 	apiserverrest "github.com/openshift/origin/pkg/apiserver/rest"
-	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	buildinternalapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/build/apis/build/validation"
 	buildwait "github.com/openshift/origin/pkg/build/apiserver/registry/wait"
 	"github.com/openshift/origin/pkg/build/buildapihelpers"
 	buildstrategy "github.com/openshift/origin/pkg/build/controller/strategy"
-	buildtypedclient "github.com/openshift/origin/pkg/build/generated/internalclientset/typed/build/internalversion"
 	buildutil "github.com/openshift/origin/pkg/build/util"
 )
 
@@ -38,7 +39,7 @@ type REST struct {
 	Timeout     time.Duration
 
 	// for unit testing
-	getSimpleLogsFn func(podNamespace, podName string, logOpts *kapi.PodLogOptions) (runtime.Object, error)
+	getSimpleLogsFn func(podNamespace, podName string, logOpts *corev1.PodLogOptions) (runtime.Object, error)
 }
 
 const defaultTimeout time.Duration = 30 * time.Second
@@ -60,65 +61,69 @@ var _ = rest.GetterWithOptions(&REST{})
 
 // Get returns a streamer resource with the contents of the build log
 func (r *REST) Get(ctx context.Context, name string, opts runtime.Object) (runtime.Object, error) {
-	buildLogOpts, ok := opts.(*buildapi.BuildLogOptions)
+	buildLogOpts, ok := opts.(*buildv1.BuildLogOptions)
 	if !ok {
 		return nil, errors.NewBadRequest("did not get an expected options.")
 	}
-	if errs := validation.ValidateBuildLogOptions(buildLogOpts); len(errs) > 0 {
+	internalBuildLogOpts := &buildinternalapi.BuildLogOptions{}
+	if err := legacyscheme.Scheme.Convert(buildLogOpts, internalBuildLogOpts, nil); err != nil {
+		return nil, errors.NewInternalError(err)
+	}
+	if errs := validation.ValidateBuildLogOptions(internalBuildLogOpts); len(errs) > 0 {
 		return nil, errors.NewInvalid(build.Kind("BuildLogOptions"), "", errs)
 	}
-	build, err := r.BuildClient.Builds(apirequest.NamespaceValue(ctx)).Get(name, metav1.GetOptions{})
+	buildObj, err := r.BuildClient.Builds(apirequest.NamespaceValue(ctx)).Get(name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
 	if buildLogOpts.Previous {
-		version := versionForBuild(build)
+		version := versionForBuild(buildObj)
 		// Use the previous version
 		version--
-		previousBuildName := buildutil.BuildNameForConfigVersion(buildutil.ConfigNameForBuild(build), version)
+		previousBuildName := buildutil.BuildNameForConfigVersion(buildutil.ConfigNameForBuild(buildObj), version)
 		previous, err := r.BuildClient.Builds(apirequest.NamespaceValue(ctx)).Get(previousBuildName, metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}
-		build = previous
+		buildObj = previous
 	}
-	switch build.Status.Phase {
+	switch buildObj.Status.Phase {
 	// Build has not launched, wait until it runs
-	case buildapi.BuildPhaseNew, buildapi.BuildPhasePending:
+	case buildv1.BuildPhaseNew, buildv1.BuildPhasePending:
 		if buildLogOpts.NoWait {
-			glog.V(4).Infof("Build %s/%s is in %s state. No logs to retrieve yet.", build.Namespace, build.Name, build.Status.Phase)
-			// return empty content if not waiting for build
+			glog.V(4).Infof("Build %s/%s is in %s state. No logs to retrieve yet.", buildObj.Namespace, buildObj.Name, buildObj.Status.Phase)
+			// return empty content if not waiting for buildObj
 			return &genericrest.LocationStreamer{}, nil
 		}
-		glog.V(4).Infof("Build %s/%s is in %s state, waiting for Build to start", build.Namespace, build.Name, build.Status.Phase)
-		latest, ok, err := buildwait.WaitForRunningBuild(r.BuildClient, build, r.Timeout)
+		glog.V(4).Infof("Build %s/%s is in %s state, waiting for Build to start", buildObj.Namespace, buildObj.Name, buildObj.Status.Phase)
+		latest, ok, err := buildwait.WaitForRunningBuild(r.BuildClient, buildObj, r.Timeout)
 		if err != nil {
-			return nil, errors.NewBadRequest(fmt.Sprintf("unable to wait for build %s to run: %v", build.Name, err))
+			return nil, errors.NewBadRequest(fmt.Sprintf("unable to wait for buildObj %s to run: %v", buildObj.Name, err))
 		}
 		switch latest.Status.Phase {
-		case buildapi.BuildPhaseError:
-			return nil, errors.NewBadRequest(fmt.Sprintf("build %s encountered an error: %s", build.Name, buildutil.NoBuildLogsMessage))
-		case buildapi.BuildPhaseCancelled:
-			return nil, errors.NewBadRequest(fmt.Sprintf("build %s was cancelled: %s", build.Name, buildutil.NoBuildLogsMessage))
+		case buildv1.BuildPhaseError:
+			return nil, errors.NewBadRequest(fmt.Sprintf("buildObj %s encountered an error: %s", buildObj.Name, buildutil.NoBuildLogsMessage))
+		case buildv1.BuildPhaseCancelled:
+			return nil, errors.NewBadRequest(fmt.Sprintf("buildObj %s was cancelled: %s", buildObj.Name, buildutil.NoBuildLogsMessage))
 		}
 		if !ok {
-			return nil, errors.NewTimeoutError(fmt.Sprintf("timed out waiting for build %s to start after %s", build.Name, r.Timeout), 1)
+			return nil, errors.NewTimeoutError(fmt.Sprintf("timed out waiting for buildObj %s to start after %s", buildObj.Name, r.Timeout), 1)
 		}
 
-	// The build was cancelled
-	case buildapi.BuildPhaseCancelled:
-		return nil, errors.NewBadRequest(fmt.Sprintf("build %s was cancelled. %s", build.Name, buildutil.NoBuildLogsMessage))
+	// The buildObj was cancelled
+	case buildv1.BuildPhaseCancelled:
+		return nil, errors.NewBadRequest(fmt.Sprintf("buildObj %s was cancelled. %s", buildObj.Name, buildutil.NoBuildLogsMessage))
 
-	// An error occurred launching the build, return an error
-	case buildapi.BuildPhaseError:
-		return nil, errors.NewBadRequest(fmt.Sprintf("build %s is in an error state. %s", build.Name, buildutil.NoBuildLogsMessage))
+	// An error occurred launching the buildObj, return an error
+	case buildv1.BuildPhaseError:
+		return nil, errors.NewBadRequest(fmt.Sprintf("buildObj %s is in an error state. %s", buildObj.Name, buildutil.NoBuildLogsMessage))
 	}
-	// The container should be the default build container, so setting it to blank
-	buildPodName := buildapihelpers.GetBuildPodName(build)
+	// The container should be the default buildObj container, so setting it to blank
+	buildPodName := buildapihelpers.GetBuildPodName(buildObj)
 
-	// if we can't at least get the build pod, we're not going to get very far, so
+	// if we can't at least get the buildObj pod, we're not going to get very far, so
 	// error out now.
-	buildPod, err := r.PodClient.Pods(build.Namespace).Get(buildPodName, metav1.GetOptions{})
+	buildPod, err := r.PodClient.Pods(buildObj.Namespace).Get(buildPodName, metav1.GetOptions{})
 	if err != nil {
 		return nil, errors.NewBadRequest(err.Error())
 	}
@@ -127,7 +132,7 @@ func (r *REST) Get(ctx context.Context, name string, opts runtime.Object) (runti
 	// and handle them w/ the old logging code.
 	if len(buildPod.Spec.InitContainers) == 0 {
 		logOpts := buildapihelpers.BuildToPodLogOptions(buildLogOpts)
-		return r.getSimpleLogsFn(build.Namespace, buildPodName, logOpts)
+		return r.getSimpleLogsFn(buildObj.Namespace, buildPodName, logOpts)
 	}
 
 	// new style builds w/ init containers from here out.
@@ -166,18 +171,18 @@ func (r *REST) Get(ctx context.Context, name string, opts runtime.Object) (runti
 		for waitForInitContainers {
 			select {
 			case <-ctx.Done():
-				glog.V(4).Infof("timed out while iterating on build init containers for build pod %s/%s", build.Namespace, buildPodName)
+				glog.V(4).Infof("timed out while iterating on buildObj init containers for buildObj pod %s/%s", buildObj.Namespace, buildPodName)
 				return
 			default:
 			}
-			glog.V(4).Infof("iterating through build init containers for build pod %s/%s", build.Namespace, buildPodName)
+			glog.V(4).Infof("iterating through buildObj init containers for buildObj pod %s/%s", buildObj.Namespace, buildPodName)
 
 			// assume we are not going to need to iterate again until proven otherwise
 			waitForInitContainers = false
 			// Get the latest version of the pod so we can check init container statuses
-			buildPod, err = r.PodClient.Pods(build.Namespace).Get(buildPodName, metav1.GetOptions{})
+			buildPod, err = r.PodClient.Pods(buildObj.Namespace).Get(buildPodName, metav1.GetOptions{})
 			if err != nil {
-				s := fmt.Sprintf("error retrieving build pod %s/%s : %v", build.Namespace, buildPodName, err.Error())
+				s := fmt.Sprintf("error retrieving buildObj pod %s/%s : %v", buildObj.Namespace, buildPodName, err.Error())
 				// we're sending the error message as the log output so the user at least sees some indication of why
 				// they didn't get the logs they expected.
 				pipeStreamer.In.Write([]byte(s))
@@ -187,7 +192,7 @@ func (r *REST) Get(ctx context.Context, name string, opts runtime.Object) (runti
 			// Walk all the initcontainers in order and dump/stream their logs.  The initcontainers
 			// are defined in order of execution, so that's the order we'll dump their logs in.
 			for _, status := range buildPod.Status.InitContainerStatuses {
-				glog.V(4).Infof("processing build pod: %s/%s container: %s in state %#v", build.Namespace, buildPodName, status.Name, status.State)
+				glog.V(4).Infof("processing buildObj pod: %s/%s container: %s in state %#v", buildObj.Namespace, buildPodName, status.Name, status.State)
 
 				if status.State.Terminated != nil && status.State.Terminated.ExitCode != 0 {
 					initFailed = true
@@ -225,8 +230,8 @@ func (r *REST) Get(ctx context.Context, name string, opts runtime.Object) (runti
 					containerLogOpts.Follow = false
 				}
 
-				if err := r.pipeLogs(ctx, build.Namespace, buildPodName, containerLogOpts, pipeStreamer.In); err != nil {
-					glog.Errorf("error: failed to stream logs for build pod: %s/%s container: %s, due to: %v", build.Namespace, buildPodName, status.Name, err)
+				if err := r.pipeLogs(ctx, buildObj.Namespace, buildPodName, containerLogOpts, pipeStreamer.In); err != nil {
+					glog.Errorf("error: failed to stream logs for buildObj pod: %s/%s container: %s, due to: %v", buildObj.Namespace, buildPodName, status.Name, err)
 					return
 				}
 
@@ -265,36 +270,36 @@ func (r *REST) Get(ctx context.Context, name string, opts runtime.Object) (runti
 			// Wait for the main container to be running, this can take a second after the initcontainers
 			// finish so we have to poll.
 			err := wait.PollImmediate(time.Second, 10*time.Minute, func() (bool, error) {
-				buildPod, err = r.PodClient.Pods(build.Namespace).Get(buildPodName, metav1.GetOptions{})
+				buildPod, err = r.PodClient.Pods(buildObj.Namespace).Get(buildPodName, metav1.GetOptions{})
 				if err != nil {
-					s := fmt.Sprintf("error while getting build logs, could not retrieve build pod %s/%s : %v", build.Namespace, buildPodName, err.Error())
+					s := fmt.Sprintf("error while getting buildObj logs, could not retrieve buildObj pod %s/%s : %v", buildObj.Namespace, buildPodName, err.Error())
 					pipeStreamer.In.Write([]byte(s))
 					return false, err
 				}
 				// we can get logs from a pod in any state other than pending.
-				if buildPod.Status.Phase != kapi.PodPending {
+				if buildPod.Status.Phase != corev1.PodPending {
 					return true, nil
 				}
 				return false, nil
 			})
 			if err != nil {
-				glog.Errorf("error: failed to stream logs for build pod: %s/%s due to: %v", build.Namespace, buildPodName, err)
+				glog.Errorf("error: failed to stream logs for buildObj pod: %s/%s due to: %v", buildObj.Namespace, buildPodName, err)
 				return
 			}
 
 			containerLogOpts := buildapihelpers.BuildToPodLogOptions(buildLogOpts)
 			containerLogOpts.Container = selectBuilderContainer(buildPod.Spec.Containers)
 			if containerLogOpts.Container == "" {
-				glog.Errorf("error: failed to select a container in build pod: %s/%s", build.Namespace, buildPodName)
+				glog.Errorf("error: failed to select a container in buildObj pod: %s/%s", buildObj.Namespace, buildPodName)
 			}
 
 			// never follow logs for terminated pods, it just causes latency in streaming the result.
-			if buildPod.Status.Phase == kapi.PodFailed || buildPod.Status.Phase == kapi.PodSucceeded {
+			if buildPod.Status.Phase == corev1.PodFailed || buildPod.Status.Phase == corev1.PodSucceeded {
 				containerLogOpts.Follow = false
 			}
 
-			if err := r.pipeLogs(ctx, build.Namespace, buildPodName, containerLogOpts, pipeStreamer.In); err != nil {
-				glog.Errorf("error: failed to stream logs for build pod: %s/%s due to: %v", build.Namespace, buildPodName, err)
+			if err := r.pipeLogs(ctx, buildObj.Namespace, buildPodName, containerLogOpts, pipeStreamer.In); err != nil {
+				glog.Errorf("error: failed to stream logs for buildObj pod: %s/%s due to: %v", buildObj.Namespace, buildPodName, err)
 				return
 			}
 		}
@@ -305,16 +310,16 @@ func (r *REST) Get(ctx context.Context, name string, opts runtime.Object) (runti
 
 // NewGetOptions returns a new options object for build logs
 func (r *REST) NewGetOptions() (runtime.Object, bool, string) {
-	return &buildapi.BuildLogOptions{}, false, ""
+	return &buildv1.BuildLogOptions{}, false, ""
 }
 
 // New creates an empty BuildLog resource
 func (r *REST) New() runtime.Object {
-	return &buildapi.BuildLog{}
+	return &buildv1.BuildLog{}
 }
 
 // pipeLogs retrieves the logs for a particular container and streams them into the provided writer.
-func (r *REST) pipeLogs(ctx context.Context, namespace, buildPodName string, containerLogOpts *kapi.PodLogOptions, writer io.Writer) error {
+func (r *REST) pipeLogs(ctx context.Context, namespace, buildPodName string, containerLogOpts *corev1.PodLogOptions, writer io.Writer) error {
 	glog.V(4).Infof("pulling build pod logs for %s/%s, container %s", namespace, buildPodName, containerLogOpts.Container)
 
 	logRequest := r.PodClient.Pods(namespace).GetLogs(buildPodName, containerLogOpts)
@@ -332,7 +337,7 @@ func (r *REST) pipeLogs(ctx context.Context, namespace, buildPodName string, con
 
 // 3rd party tools, such as istio auto-inject, may add sidecar containers to
 // the build pod. We are interested in logs from the build container only
-func selectBuilderContainer(containers []kapi.Container) string {
+func selectBuilderContainer(containers []corev1.Container) string {
 	for _, c := range containers {
 		for _, bcName := range buildstrategy.BuildContainerNames {
 			if c.Name == bcName {
@@ -343,7 +348,7 @@ func selectBuilderContainer(containers []kapi.Container) string {
 	return ""
 }
 
-func (r *REST) getSimpleLogs(podNamespace, podName string, logOpts *kapi.PodLogOptions) (runtime.Object, error) {
+func (r *REST) getSimpleLogs(podNamespace, podName string, logOpts *corev1.PodLogOptions) (runtime.Object, error) {
 	logRequest := r.PodClient.Pods(podNamespace).GetLogs(podName, logOpts)
 
 	readerCloser, err := logRequest.Stream()
@@ -360,11 +365,11 @@ func (r *REST) getSimpleLogs(podNamespace, podName string, logOpts *kapi.PodLogO
 
 // versionForBuild returns the version from the provided build name.
 // If no version can be found, 0 is returned to indicate no version.
-func versionForBuild(build *buildapi.Build) int {
+func versionForBuild(build *buildv1.Build) int {
 	if build == nil {
 		return 0
 	}
-	versionString := build.Annotations[buildapi.BuildNumberAnnotation]
+	versionString := build.Annotations[buildutil.BuildNumberAnnotation]
 	version, err := strconv.Atoi(versionString)
 	if err != nil {
 		return 0
