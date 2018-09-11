@@ -70,7 +70,6 @@ func (c *ClusterUpConfig) StartSelfHosted(out io.Writer) error {
 		AssetsDir:            configDirs.assetsDir,
 		ContainerBinds: []string{
 			fmt.Sprintf("%s:/etc/kubernetes:z", filepath.Join(c.BaseDir, "kubernetes")),
-			fmt.Sprintf("%s:/static-pod-manifests:z", filepath.Join(c.BaseDir, "static-pod-manifests")),
 		},
 	}
 	glog.Info("Bootkube phase-1 kube-apiserver is ready. Going to call bootkube start ...")
@@ -158,10 +157,10 @@ func (c *ClusterUpConfig) BuildConfig() (*configDirs, error) {
 	configs := &configDirs{
 		// Directory where bootkube renders the static pod manifests
 		assetsDir: filepath.Join(c.BaseDir, "bootkube"),
-		// Directory that kubelet scans for static manifests
-		podManifestDir: filepath.Join(c.BaseDir, "static-pod-manifests"),
 		// Directory where bootkube copy the bootstrap secrets
 		kubernetesDir: filepath.Join(c.BaseDir, "kubernetes"),
+		// Directory that kubelet scans for static manifests
+		podManifestDir: filepath.Join(c.BaseDir, "kubernetes/manifests"),
 	}
 
 	if _, err := os.Stat(configs.assetsDir); os.IsNotExist(err) {
