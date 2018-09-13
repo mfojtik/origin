@@ -1,6 +1,8 @@
 package clusterup
 
 import (
+	"fmt"
+	"path"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -9,6 +11,7 @@ import (
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 
 	"github.com/openshift/origin/pkg/oc/clusterup/componentinstall"
+	"github.com/openshift/origin/pkg/oc/clusterup/coreinstall/kubeapiserver"
 	"github.com/openshift/origin/pkg/oc/clusterup/docker/dockerhelper"
 	"github.com/openshift/origin/pkg/oc/clusterup/manifests"
 )
@@ -74,6 +77,29 @@ var (
 		},
 	}
 )
+
+// makeMasterConfig returns the directory where a generated masterconfig lives
+func (c *ClusterUpConfig) makeMasterConfig() (string, error) {
+	publicHost := c.GetPublicHostName()
+
+	container := kubeapiserver.NewKubeAPIServerStartConfig()
+	container.MasterImage = c.openshiftImage()
+	container.Args = []string{
+		"--write-config=/var/lib/origin/openshift.local.config",
+		fmt.Sprintf("--master=%s", c.ServerIP),
+		fmt.Sprintf("--images=%s", c.imageFormat()),
+		fmt.Sprintf("--dns=0.0.0.0:%d", c.DNSPort),
+		fmt.Sprintf("--public-master=https://%s:8443", publicHost),
+		"--etcd-dir=/var/lib/etcd",
+	}
+
+	masterConfigDir, err := container.MakeMasterConfig(c.GetDockerClient(), path.Join(c.BaseDir, "legacy"))
+	if err != nil {
+		return "", fmt.Errorf("error creating master config: %v", err)
+	}
+
+	return masterConfigDir, nil
+}
 
 func newNamespaceBytes(namespace string, labels map[string]string) []byte {
 	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace, Labels: labels}}

@@ -202,6 +202,13 @@ func (c *ClusterUpConfig) BuildConfig() (*configDirs, error) {
 		return nil, err
 	}
 
+	// LEGACY LEGACY LEGACY LEGACY LEGACY LEGACY LEGACY LEGACY LEGACY LEGACY LEGACY LEGACY
+	// fill up with legacy config
+	// TODO: get rid of this
+	if _, err = c.makeMasterConfig(); err != nil {
+		return nil, err
+	}
+
 	return configs, nil
 }
 
