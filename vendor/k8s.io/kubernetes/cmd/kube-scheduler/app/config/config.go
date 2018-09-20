@@ -48,6 +48,8 @@ type Config struct {
 
 	// LeaderElection is optional.
 	LeaderElection *leaderelection.LeaderElectionConfig
+
+	SkipComponentConfigRegistration bool
 }
 
 type completedConfig struct {

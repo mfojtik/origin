@@ -39,6 +39,8 @@ func computeSchedulerArgs(kubeconfigFile, schedulerConfigFile string, qps float3
 		cmdLineArgs["leader-elect-resource-lock"] = []string{"configmaps"}
 	}
 
+	cmdLineArgs["skip-component-config-registration"] = []string{"true"}
+
 	// disable serving http since we didn't used to expose it
 	if len(cmdLineArgs["port"]) == 0 {
 		cmdLineArgs["port"] = []string{"0"}

@@ -92,6 +92,7 @@ through the API as necessary.`,
 				os.Exit(1)
 			}
 
+
 			if len(opts.WriteConfigTo) > 0 {
 				if err := options.WriteConfigFile(opts.WriteConfigTo, &opts.ComponentConfig); err != nil {
 					fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -106,6 +107,8 @@ through the API as necessary.`,
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
+
+			c.SkipComponentConfigRegistration = opts.SkipComponentConfigRegistration
 
 			stopCh := make(chan struct{})
 			if err := Run(c.Complete(), stopCh); err != nil {
@@ -129,11 +132,13 @@ func Run(c schedulerserverconfig.CompletedConfig, stopCh <-chan struct{}) error 
 	// TODO: make configurable?
 	algorithmprovider.ApplyFeatureGates()
 
-	// Configz registration.
-	if cz, err := configz.New("componentconfig"); err == nil {
-		cz.Set(c.ComponentConfig)
-	} else {
-		return fmt.Errorf("unable to register configz: %s", err)
+	if !c.SkipComponentConfigRegistration {
+		// Configz registration.
+		if cz, err := configz.New("componentconfig"); err == nil {
+			cz.Set(c.ComponentConfig)
+		} else {
+			return fmt.Errorf("unable to register configz: %s", err)
+		}
 	}
 
 	// Build a scheduler config from the provided algorithm source.
