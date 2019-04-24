@@ -222,6 +222,14 @@ func CreateKubeAPIServer(kubeAPIServerConfig *master.Config, delegateAPIServer g
 
 	kubeAPIServer.GenericAPIServer.AddPostStartHookOrDie("start-kube-apiserver-admission-initializer", admissionPostStartHook)
 
+	kubeAPIServer.GenericAPIServer.AddPreShutdownHook("switch-logging-to-file", func() error {
+		logFile, err := os.Create(fmt.Sprintf("/var/log/kube-apiserver/%s-shutdown.log", os.Getenv("POD_NAME")))
+		if err != nil {
+			return err
+		}
+		klog.SetOutput(logFile)
+	})
+
 	return kubeAPIServer, nil
 }
 
