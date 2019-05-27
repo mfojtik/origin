@@ -24,10 +24,11 @@ import (
 	kapi "k8s.io/kubernetes/pkg/apis/core"
 
 	"github.com/openshift/api/route"
+
 	"github.com/openshift/origin/pkg/api/legacy"
 	templateapi "github.com/openshift/origin/pkg/template/apis/template"
-	"github.com/openshift/origin/pkg/templateservicebroker/openservicebroker/api"
-	"github.com/openshift/origin/pkg/templateservicebroker/util"
+	"github.com/openshift/template-service-broker/pkg/openservicebroker/api"
+	"github.com/openshift/template-service-broker/pkg/util"
 )
 
 func evaluateJSONPathExpression(obj interface{}, annotation, expression string, base64encode bool) (string, error) {
