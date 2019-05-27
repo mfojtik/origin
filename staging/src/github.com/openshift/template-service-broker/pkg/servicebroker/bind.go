@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 
+	"k8s.io/client-go/restmapper"
 	"k8s.io/klog"
 
 	authorizationv1 "k8s.io/api/authorization/v1"
@@ -25,7 +26,6 @@ import (
 
 	"github.com/openshift/api/route"
 
-	"github.com/openshift/origin/pkg/api/legacy"
 	templateapi "github.com/openshift/origin/pkg/template/apis/template"
 	"github.com/openshift/template-service-broker/pkg/openservicebroker/api"
 	"github.com/openshift/template-service-broker/pkg/util"
@@ -204,8 +204,7 @@ func (b *Broker) Bind(u user.Info, instanceID, bindingID string, breq *api.BindR
 		case kapi.Kind("ConfigMap"),
 			kapi.Kind("Secret"),
 			kapi.Kind("Service"),
-			route.Kind("Route"),
-			legacy.Kind("Route"):
+			route.Kind("Route"):
 		default:
 			continue
 		}
